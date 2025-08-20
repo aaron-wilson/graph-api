@@ -5,8 +5,12 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "dev": "nodemon",
+    "lint": "eslint .",
+    "prepare": "husky",
+    "start": "tsx scripts/dev.ts",
     "test": "echo \"future test\"",
-    "prepare": "husky"
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
@@ -14,6 +18,7 @@
   "packageManager": "pnpm@10.15.0",
   "devDependencies": {
     "@commitlint/config-conventional": "^19.8.1",
+    "@eslint/js": "^9.33.0",
     "@types/node": "^24.3.0",
     "@typescript-eslint/eslint-plugin": "^8.40.0",
     "@typescript-eslint/parser": "^8.40.0",
@@ -23,8 +28,20 @@
     "eslint-plugin-prettier": "^5.5.4",
     "husky": "^9.1.7",
     "lint-staged": "^16.1.5",
+    "nodemon": "^3.1.10",
     "prettier": "^3.6.2",
     "tsx": "^4.20.4",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.40.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.868.0",
+    "@aws-sdk/lib-dynamodb": "^3.868.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/sdk-node": "^0.203.0",
+    "aws-jwt-verify": "^5.1.0",
+    "graphql": "^16.11.0",
+    "graphql-yoga": "^5.15.1",
+    "zod": "^4.0.17"
   }
 }
