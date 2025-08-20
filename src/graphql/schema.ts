@@ -6,10 +6,6 @@ export const schema = createSchema({
       hello: String
     }
   `,
-
-     
-      //
-
   resolvers: {
     Query: {
       hello: () => 'world'
