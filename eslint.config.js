@@ -1,16 +1,11 @@
-import jsLint from "@eslint/js"
-import tsLint from "typescript-eslint"
+import eslint from '@eslint/js'
+import tseslint from 'typescript-eslint'
+import prettierConfig from 'eslint-config-prettier';
 
-export default [
-    {
-        files: ["**/*.{js,mjs,cjs,ts,mts,jsx,tsx}"],
-        languageOptions: {
-            parser: "@typescript-eslint/parser",
-            parserOptions: {
-                sourceType: "module"
-            }
-        }
-    },
-    jsLint.configs.recommended,
-    ...tsLint.configs.recommended,
-]
+export default tseslint.config(
+  eslint.configs.recommended,
+  // tseslint.configs.recommended,
+  tseslint.configs.strict,
+  tseslint.configs.stylistic,
+  prettierConfig,
+)

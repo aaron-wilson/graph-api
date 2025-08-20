@@ -10,5 +10,5 @@ export const schema = createSchema({
     Query: {
       hello: () => 'world'
     }
-  }
+  },
 })
