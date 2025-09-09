@@ -1,5 +1,4 @@
 // import OpenAI from "openai";
-import fetch from "node-fetch";
 
 // Initialize OpenAI client
 // const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -27,7 +26,10 @@ async function isLiveEvent(preference: string): Promise<boolean> {
     case normalized.includes("concert"):
     case normalized.includes("comedy"):
     case normalized.includes("theater"):
-    case normalized.includes("live show"):
+    case normalized.includes("play"):
+    case normalized.includes("live"):
+    case normalized.includes("show"):
+    case normalized.includes("event"):
       return true;
     default:
       return false;
@@ -68,7 +70,7 @@ async function synthesizeItinerary(
     Candidate activities: ${activityOptions.join(", ")}
 
     Create a detailed 3-day itinerary. Decide the order, suggest alternatives if needed, and explain reasoning for each choice.
-    `;
+  `;
 
   //   const response = await client.chat.completions.create({
   //     model: "gpt-4o-mini",
@@ -91,6 +93,40 @@ async function synthesizeItinerary(
 
 export const resolvers = {
   Query: {
+    /**
+     * planTrip resolver
+     *
+     * Generates a 3-day personalized travel itinerary for a given city based on user preferences.
+     *
+     * @param _ - GraphQL parent object (unused)
+     * @param city - The city to plan the trip for
+     * @param preferences - List of user preferences (e.g., museums, coffee shops, walking tours, music events)
+     * @returns {{ itinerary: string, currentWeather?: string, activityOptions?: string[] }}
+     *
+     * Example GraphQL query:
+     *
+     * query {
+     *   planTrip(
+     *     city: "Barcelona",
+     *     preferences: [
+     *       "museums",
+     *       "coffee shops",
+     *       "walking tours",
+     *       "music events"
+     *     ]
+     *   ) {
+     *     itinerary
+     *     currentWeather
+     *     activityOptions
+     *   }
+     * }
+     *
+     * Corresponding curl command:
+     *
+     * curl -X POST http://localhost:4000/graphql \
+     *   -H "Content-Type: application/json" \
+     *   -d '{"query":"query { planTrip(city: \"Barcelona\", preferences: [\"museums\",\"coffee shops\",\"walking tours\",\"music events\"]) { itinerary currentWeather activityOptions } }"}'
+     */
     planTrip: async (
       _: unknown,
       { city, preferences }: { city: string; preferences: string[] }
@@ -99,8 +135,8 @@ export const resolvers = {
       const prioritizedActivities = preferences;
 
       // Step 2: Fetch external data
-      const museums = await getMuseumHours(city);
-      const events = await getLiveEvents(city);
+      const museums = await getMuseumHours();
+      const events = await getLiveEvents();
       const currentWeather = await getCurrentWeather(city);
 
       // Step 3: Determine which preferences are live events via mock LLM
@@ -122,10 +158,11 @@ export const resolvers = {
             const event = events.find((e) => e.available);
             return event ? [`Attend ${event.name}`] : [];
           }
-          case act.toLowerCase().includes("walking"): {
+          case act.toLowerCase().includes("walk") ||
+            act.toLowerCase().includes("run"): {
             if (
-              currentWeather.toLowerCase() === "rain" ||
-              currentWeather.toLowerCase() === "snow"
+              currentWeather.includes("rain") ||
+              currentWeather.includes("snow")
             ) {
               return [];
             } else {
@@ -157,7 +194,11 @@ export const resolvers = {
         activityOptions
       );
 
-      return itinerary;
+      return {
+        itinerary,
+        currentWeather,
+        activityOptions,
+      };
     },
   },
 };
