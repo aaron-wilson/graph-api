@@ -6,6 +6,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "lint": "eslint .",
     "prepare": "husky",
     "start": "tsx scripts/dev.ts",
