@@ -1,14 +1,15 @@
-import { createSchema } from 'graphql-yoga'
+// src/schema.ts
+import { createSchema } from 'graphql-yoga';
+import { resolvers } from './resolvers';
 
 export const schema = createSchema({
   typeDefs: /* GraphQL */ `
     type Query {
-      hello: String
+      planTrip(
+        city: String!
+        preferences: [String!]!
+      ): String!
     }
   `,
-  resolvers: {
-    Query: {
-      hello: () => 'world'
-    }
-  },
-})
+  resolvers, // link external resolvers here
+});
