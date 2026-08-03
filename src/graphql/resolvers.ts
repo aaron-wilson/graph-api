@@ -32,12 +32,9 @@ async function getLiveEvents() {
 async function getCurrentWeather(city: string): Promise<string> {
   logger.info("Fetching weather data", { city });
   try {
-    const res = await fetch(
-      `https://wttr.in/${encodeURIComponent(city)}?format=j1`
-    );
+    const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`);
     const data = await res.json();
-    const weather =
-      data.current_condition?.[0]?.weatherDesc?.[0]?.value ?? "Unknown";
+    const weather = data.current_condition?.[0]?.weatherDesc?.[0]?.value ?? "Unknown";
     logger.debug("Weather data retrieved", { city, weather });
     return weather;
   } catch (error) {
@@ -68,10 +65,7 @@ async function isLiveEvent(preference: string): Promise<boolean> {
  * Determine if an activity is outdoor AND suitable given current weather.
  * Returns true only if both conditions are satisfied.
  */
-async function isSuitableOutdoorActivity(
-  activity: string,
-  weather: string
-): Promise<boolean> {
+async function isSuitableOutdoorActivity(activity: string, weather: string): Promise<boolean> {
   logger.debug("LLM check outdoor suitability", { activity, weather });
 
   // const prompt = `
@@ -228,19 +222,14 @@ export const resolvers = {
           }
 
           // Handle live events
-          const liveEventFlag = liveEventFlags.find(
-            (f) => f.activity === act
-          )?.isLiveEvent;
+          const liveEventFlag = liveEventFlags.find((f) => f.activity === act)?.isLiveEvent;
           if (liveEventFlag) {
             const event = events.find((e) => e.available);
             return event ? [`Attend ${event.name}`] : [];
           }
 
           // Catch-all: async check for outdoor suitability
-          const suitableOutdoorActivity = await isSuitableOutdoorActivity(
-            act,
-            currentWeather
-          );
+          const suitableOutdoorActivity = await isSuitableOutdoorActivity(act, currentWeather);
           return suitableOutdoorActivity ? [`Enjoy ${act}`] : [];
         })
       );

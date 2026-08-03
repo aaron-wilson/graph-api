@@ -1,7 +1,6 @@
 # graph-api
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://github.com/aaron-wilson/graph-api/actions/workflows/ci.yml/badge.svg)](https://github.com/aaron-wilson/graph-api/actions)
 
 > A TypeScript-first, Node-based GraphQL API using Yoga, AWS DynamoDB, and AWS Cognito for secure, scalable, and type-safe serverless operations.
 
@@ -25,7 +24,7 @@
 
 ## Overview
 
-This repository contains the primary GraphQL API for our application ecosystem. It is built with modern TypeScript-first practices and serverless AWS infrastructure, providing a highly maintainable, type-safe, and secure API layer.  
+This repository contains the primary GraphQL API for our application ecosystem. It is built with modern TypeScript-first practices and serverless AWS infrastructure, providing a highly maintainable, type-safe, and secure API layer.
 
 Key features:
 
@@ -39,20 +38,20 @@ Key features:
 
 ## Tech Stack
 
-| Layer | Technology | Reasoning / Explanation |
-|-------|------------|------------------------|
-| Runtime | [Node.js 20](https://nodejs.org/en/) | Latest LTS with ESM-first support for modern JavaScript modules |
-| Package Management | [pnpm](https://pnpm.io/) | Efficient, deterministic, and disk-space saving monorepo support |
-| API | [GraphQL](https://graphql.org/) | Flexible, self-documenting query language |
-| GraphQL Server | [Yoga](https://www.graphql-yoga.com/) | Drop-in Apollo Server replacement, built on [Envelop](https://envelop.dev/) for plugin extensibility |
-| Schema | TypeScript-first | Strong typing, autocompletion, and runtime safety via generated types |
-| Database | [AWS DynamoDB](https://docs.aws.amazon.com/dynamodb/index.html) | Scalable, serverless NoSQL database with high availability |
-| Data Validation | [Zod](https://zod.dev/) | Runtime input/output validation, complements TypeScript types |
-| Authentication | [AWS Cognito](https://docs.aws.amazon.com/cognito/latest/developerguide/what-is-amazon-cognito.html) | Secure JWT-based user authentication |
-| Security | CORS, rate limiting, security headers | Standard API hardening practices |
-| Testing | [Vitest](https://vitest.dev/) + [Supertest](https://github.com/visionmedia/supertest) | Fast unit tests and GraphQL endpoint integration testing |
-| CI/CD | [GitHub Actions](https://docs.github.com/en/actions) + [AWS CDK](https://docs.aws.amazon.com/cdk/) | Automates linting, testing, and deployment of serverless resources |
-| Observability | [OpenTelemetry](https://opentelemetry.io/) → [New Relic](https://docs.newrelic.com/docs/) | Full-stack observability: logs, metrics, traces |
+| Layer              | Technology                                                                                           | Reasoning / Explanation                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Runtime            | [Node.js 20](https://nodejs.org/en/)                                                                 | Latest LTS with ESM-first support for modern JavaScript modules                                      |
+| Package Management | [pnpm](https://pnpm.io/)                                                                             | Efficient, deterministic, and disk-space saving monorepo support                                     |
+| API                | [GraphQL](https://graphql.org/)                                                                      | Flexible, self-documenting query language                                                            |
+| GraphQL Server     | [Yoga](https://www.graphql-yoga.com/)                                                                | Drop-in Apollo Server replacement, built on [Envelop](https://envelop.dev/) for plugin extensibility |
+| Schema             | TypeScript-first                                                                                     | Strong typing, autocompletion, and runtime safety via generated types                                |
+| Database           | [AWS DynamoDB](https://docs.aws.amazon.com/dynamodb/index.html)                                      | Scalable, serverless NoSQL database with high availability                                           |
+| Data Validation    | [Zod](https://zod.dev/)                                                                              | Runtime input/output validation, complements TypeScript types                                        |
+| Authentication     | [AWS Cognito](https://docs.aws.amazon.com/cognito/latest/developerguide/what-is-amazon-cognito.html) | Secure JWT-based user authentication                                                                 |
+| Security           | CORS, rate limiting, security headers                                                                | Standard API hardening practices                                                                     |
+| Testing            | [Vitest](https://vitest.dev/) + [Supertest](https://github.com/visionmedia/supertest)                | Fast unit tests and GraphQL endpoint integration testing                                             |
+| CI/CD              | [GitHub Actions](https://docs.github.com/en/actions) + [AWS CDK](https://docs.aws.amazon.com/cdk/)   | Automates linting, testing, and deployment of serverless resources                                   |
+| Observability      | [OpenTelemetry](https://opentelemetry.io/) → [New Relic](https://docs.newrelic.com/docs/)            | Full-stack observability: logs, metrics, traces                                                      |
 
 ---
 
@@ -85,8 +84,8 @@ GraphQL Yoga provides an auto-generated playground for testing queries and mutat
 pnpm dev
 ```
 
-* Automatically loads environment variables from `.env`
-* Hot-reloads on code changes
+- Automatically loads environment variables from `.env`
+- Hot-reloads on code changes
 
 ---
 
@@ -94,8 +93,8 @@ pnpm dev
 
 All sensitive credentials are stored in AWS:
 
-* **SSM Parameter Store:** Non-sensitive configuration
-* **Secrets Manager:** JWT secrets, database credentials
+- **SSM Parameter Store:** Non-sensitive configuration
+- **Secrets Manager:** JWT secrets, database credentials
 
 Environment variables for local development:
 
@@ -112,9 +111,9 @@ DYNAMO_TABLE_NAME=YourDynamoTable
 
 We use **AWS DynamoDB** for all data persistence:
 
-* `DocumentClient` for intuitive JSON-based operations
-* TypeScript DTOs with Zod validation to ensure runtime type safety
-* Serverless scalability and minimal operational overhead
+- `DocumentClient` for intuitive JSON-based operations
+- TypeScript DTOs with Zod validation to ensure runtime type safety
+- Serverless scalability and minimal operational overhead
 
 See [DynamoDB Docs](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html) for details.
 
@@ -122,11 +121,11 @@ See [DynamoDB Docs](https://docs.aws.amazon.com/amazondynamodb/latest/developerg
 
 ## Authentication & Security
 
-* **JWT Verification** via AWS Cognito
-* **CORS** enabled for trusted domains
-* **Rate limiting** to prevent abuse
-* **Input validation** using Zod
-* **Security headers** via Helmet or Yoga plugins
+- **JWT Verification** via AWS Cognito
+- **CORS** enabled for trusted domains
+- **Rate limiting** to prevent abuse
+- **Input validation** using Zod
+- **Security headers** via Helmet or Yoga plugins
 
 See [AWS Cognito Docs](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools.html) for setup.
 
@@ -136,8 +135,8 @@ See [AWS Cognito Docs](https://docs.aws.amazon.com/cognito/latest/developerguide
 
 Unit tests and integration tests are powered by:
 
-* [Vitest](https://vitest.dev/) – Unit and utility tests
-* [Supertest](https://github.com/visionmedia/supertest) – GraphQL endpoint integration tests
+- [Vitest](https://vitest.dev/) – Unit and utility tests
+- [Supertest](https://github.com/visionmedia/supertest) – GraphQL endpoint integration tests
 
 ```bash
 # Run all tests
@@ -151,14 +150,13 @@ pnpm test --watch
 
 ## CI/CD
 
-* **GitHub Actions** workflow: `lint → test → deploy`
-* Deployment via **AWS CDK**:
-
-  * Lambda functions
-  * Application Load Balancer (ALB)
-  * Step Functions
-  * IAM roles and policies
-  * Secrets and parameters
+- **GitHub Actions** workflow: `lint → test → deploy`
+- Deployment via **AWS CDK**:
+  - Lambda functions
+  - Application Load Balancer (ALB)
+  - Step Functions
+  - IAM roles and policies
+  - Secrets and parameters
 
 See [AWS CDK Docs](https://docs.aws.amazon.com/cdk/latest/guide/home.html) for more details.
 
@@ -166,9 +164,9 @@ See [AWS CDK Docs](https://docs.aws.amazon.com/cdk/latest/guide/home.html) for m
 
 ## Observability
 
-* **OpenTelemetry** instrumentation for logs, metrics, and traces
-* Forwarded to **New Relic** for full-stack monitoring
-* Helps detect performance issues and trace errors in serverless workflows
+- **OpenTelemetry** instrumentation for logs, metrics, and traces
+- Forwarded to **New Relic** for full-stack monitoring
+- Helps detect performance issues and trace errors in serverless workflows
 
 See [OpenTelemetry Docs](https://opentelemetry.io/docs/) for setup guidance.
 
