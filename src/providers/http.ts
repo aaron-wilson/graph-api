@@ -90,6 +90,38 @@ export async function getJson<T extends z.ZodTypeAny>(
 export function normalizeStreamError(error: unknown, signal?: AbortSignal): ProviderError {
   return classify(error, signal);
 }
+/**
+ * Aborts an LLM stream when the caller cancels, when the first or next event takes longer than
+ * stepMs, or when the whole stream exceeds deadlineMs. `expired` tells timeouts from cancellation.
+ */
+export function streamWatchdog(stepMs: number, deadlineMs: number, signal?: AbortSignal) {
+  const controller = new AbortController();
+  let expired = false;
+  const expire = () => {
+    expired = true;
+    controller.abort(new DOMException("Provider stream timed out", "TimeoutError"));
+  };
+  const cancel = () => controller.abort(signal?.reason);
+  let idle = setTimeout(expire, stepMs);
+  const total = setTimeout(expire, deadlineMs);
+  signal?.addEventListener("abort", cancel, { once: true });
+  if (signal?.aborted) cancel();
+  return {
+    signal: controller.signal,
+    get expired() {
+      return expired && !signal?.aborted;
+    },
+    touch() {
+      clearTimeout(idle);
+      if (!controller.signal.aborted) idle = setTimeout(expire, stepMs);
+    },
+    dispose() {
+      clearTimeout(idle);
+      clearTimeout(total);
+      signal?.removeEventListener("abort", cancel);
+    },
+  };
+}
 export async function* boundedStream(source: AsyncIterable<string>, signal?: AbortSignal) {
   let length = 0;
   try {

@@ -36,6 +36,7 @@ export function createProviders(
             model: config.openaiModel ?? "",
             baseURL: config.openaiBaseUrl,
             timeoutMs: config.providerTimeoutMs,
+            deadlineMs: config.providerStreamDeadlineMs,
             fetch: transportFetch,
           })
         : config.providerLlm === "anthropic"
@@ -44,6 +45,7 @@ export function createProviders(
               model: config.anthropicModel ?? "",
               baseURL: config.anthropicBaseUrl,
               timeoutMs: config.providerTimeoutMs,
+              deadlineMs: config.providerStreamDeadlineMs,
               fetch: transportFetch,
             })
           : mockProviders.llm,

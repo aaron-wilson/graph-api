@@ -197,6 +197,7 @@ it("streams OpenAI and Anthropic SDK events through injected fetch", async () =>
     model: "test",
     baseURL: "https://openai.test/v1",
     timeoutMs: 1000,
+    deadlineMs: 5000,
     fetch: openaiFetch,
   });
   expect(await collect(openai.stream("Rome"))).toBe("Hello");
@@ -212,6 +213,7 @@ it("streams OpenAI and Anthropic SDK events through injected fetch", async () =>
     model: "test",
     baseURL: "https://anthropic.test",
     timeoutMs: 1000,
+    deadlineMs: 5000,
     fetch: anthropicFetch,
   });
   expect(await collect(anthropic.stream("Rome"))).toBe("Hello");
@@ -226,6 +228,7 @@ it("streams OpenAI and Anthropic SDK events through injected fetch", async () =>
     model: "test",
     baseURL: "https://openai.test/v1",
     timeoutMs: 1000,
+    deadlineMs: 5000,
     fetch: rateFetch,
   });
   await expect(collect(limited.stream("Rome"))).rejects.toMatchObject({ code: "rate_limit" });
@@ -238,7 +241,87 @@ it("streams OpenAI and Anthropic SDK events through injected fetch", async () =>
     model: "test",
     baseURL: "https://anthropic.test",
     timeoutMs: 1000,
+    deadlineMs: 5000,
     fetch: emptyFetch,
   });
   await expect(collect(empty.stream("Rome"))).rejects.toMatchObject({ code: "invalid_response" });
+});
+
+it("bounds LLM streams by first-token, idle and total deadlines", async () => {
+  // Emits `count` frames every `everyMs`, then `end`; a negative count never ends.
+  const paced =
+    (frame: (index: number) => string, end: string, count: number, everyMs: number): typeof fetch =>
+    async (_input, init) => {
+      const encoder = new TextEncoder();
+      let sent = 0;
+      let timer: ReturnType<typeof setInterval> | undefined;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          timer = setInterval(() => {
+            if (count < 0 || sent < count) controller.enqueue(encoder.encode(frame((sent += 1))));
+            else {
+              clearInterval(timer);
+              controller.enqueue(encoder.encode(end));
+              controller.close();
+            }
+          }, everyMs);
+          init?.signal?.addEventListener("abort", () => {
+            clearInterval(timer);
+            controller.error(init.signal?.reason);
+          });
+        },
+        cancel: () => clearInterval(timer),
+      });
+      return new Response(body, { headers: { "content-type": "text/event-stream" } });
+    };
+  const vendors = [
+    (fetcher: typeof fetch, deadlineMs = 2000) =>
+      createOpenAiLlm({
+        apiKey: "local",
+        model: "test",
+        baseURL: "https://openai.test/v1",
+        timeoutMs: 150,
+        deadlineMs,
+        fetch: fetcher,
+      }),
+    (fetcher: typeof fetch, deadlineMs = 2000) =>
+      createAnthropicLlm({
+        apiKey: "local",
+        model: "test",
+        baseURL: "https://anthropic.test",
+        timeoutMs: 150,
+        deadlineMs,
+        fetch: fetcher,
+      }),
+  ];
+  const frames = [
+    [
+      (index: number) => `data: {"type":"response.output_text.delta","delta":"w${index} "}\n\n`,
+      "data: [DONE]\n\n",
+    ],
+    [
+      (index: number) =>
+        `event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"w${index} "}}\n\n`,
+      'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+    ],
+  ] as const;
+  for (const [index, create] of vendors.entries()) {
+    const [frame, end] = frames[index] ?? frames[0];
+    // Twelve chunks 40 ms apart outlast the 150 ms step timeout but never stall.
+    const steady = await collect(create(paced(frame, end, 12, 40)).stream("Rome"));
+    expect(steady.trim().split(" ")).toHaveLength(12);
+    await expect(collect(create(paced(frame, end, 1, 400)).stream("Rome"))).rejects.toMatchObject({
+      code: "timeout",
+    });
+    await expect(
+      collect(create(paced(frame, end, -1, 40), 400).stream("Rome"))
+    ).rejects.toMatchObject({ code: "timeout" });
+    const controller = new AbortController();
+    const iterator = create(paced(frame, end, -1, 40))
+      .stream("Rome", controller.signal)
+      [Symbol.asyncIterator]();
+    expect((await iterator.next()).value).toBe("w1 ");
+    controller.abort();
+    await expect(iterator.next()).rejects.toMatchObject({ code: "cancelled" });
+  }
 });
