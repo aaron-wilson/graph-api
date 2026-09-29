@@ -1,18 +1,18 @@
-// src/schema.ts
 import { createSchema } from "graphql-yoga";
-import { resolvers } from "./resolvers";
+import { createResolvers, type WeatherProvider } from "./resolvers.js";
 
-export const schema = createSchema({
-  typeDefs: /* GraphQL */ `
-    type Query {
-      planTrip(city: String!, preferences: [String!]!): TripPlan!
-    }
-
-    type TripPlan {
-      itinerary: String!
-      currentWeather: String
-      activityOptions: [String!]
-    }
-  `,
-  resolvers,
-});
+export function createTripSchema(weather: WeatherProvider) {
+  return createSchema({
+    typeDefs: /* GraphQL */ `
+      type Query {
+        planTrip(city: String!, preferences: [String!]!): TripPlan!
+      }
+      type TripPlan {
+        itinerary: String!
+        currentWeather: String
+        activityOptions: [String!]
+      }
+    `,
+    resolvers: createResolvers(weather),
+  });
+}
