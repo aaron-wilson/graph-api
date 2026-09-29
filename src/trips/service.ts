@@ -131,7 +131,8 @@ export function createTripService({
     async generateCreate(
       plan: CreatePlan,
       emit: (chunk: string) => void,
-      generationSignal: AbortSignal
+      generationSignal: AbortSignal,
+      commit: () => void
     ) {
       const ideas = await generatedIdeas(
         plan.city,
@@ -139,7 +140,7 @@ export function createTripService({
         emit,
         generationSignal
       );
-      if (generationSignal.aborted) throw new Error("Generation cancelled");
+      commit();
       const days = planDays(ideas, plan.startDate, plan.dayCount, plan.preferences.pace, newId);
       return remember(await rest.create({ city: plan.city, preferences: plan.preferences, days }));
     },
@@ -160,10 +161,11 @@ export function createTripService({
     async generateRefine(
       { trip, version, preferences: next }: RefinePlan,
       emit: (chunk: string) => void,
-      generationSignal: AbortSignal
+      generationSignal: AbortSignal,
+      commit: () => void
     ) {
       const ideas = await generatedIdeas(trip.city, next.interests, emit, generationSignal);
-      if (generationSignal.aborted) throw new Error("Generation cancelled");
+      commit();
       const days = refineDays(trip.days, ideas, next.pace, newId);
       return remember(await rest.update(trip.id, version, { preferences: next, days }));
     },

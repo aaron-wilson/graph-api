@@ -17,15 +17,17 @@ export const resolvers: Resolvers = {
     startCreateGeneration: (_, { input }, { trips, generations, principal }) => {
       if (!principal) throw new Unauthenticated();
       const plan = trips.prepareCreate(input);
-      return generations.start(principal.id, `${principal.id}:create`, (signal, emit) =>
-        trips.generateCreate(plan, emit, signal)
+      return generations.start(principal.id, `${principal.id}:create`, (signal, emit, commit) =>
+        trips.generateCreate(plan, emit, signal, commit)
       );
     },
     startRefineGeneration: async (_, { input }, { trips, generations, principal }) => {
       if (!principal) throw new Unauthenticated();
       const plan = await trips.prepareRefine(input);
-      return generations.start(principal.id, `${principal.id}:${plan.trip.id}`, (signal, emit) =>
-        trips.generateRefine(plan, emit, signal)
+      return generations.start(
+        principal.id,
+        `${principal.id}:${plan.trip.id}`,
+        (signal, emit, commit) => trips.generateRefine(plan, emit, signal, commit)
       );
     },
     cancelGeneration: (_, { id }, { generations, principal }) => {

@@ -21,6 +21,8 @@ interface Job {
   events: { at: number; event: GenerationEvent }[];
   listeners: Set<(event: GenerationEvent) => void>;
   controller: AbortController;
+  /** Set just before the REST write; from then on the job ends with the real REST outcome. */
+  committing: boolean;
 }
 const HISTORY_MS = 5 * 60_000;
 const MAX_EVENTS = 100;
@@ -94,13 +96,17 @@ export function createGenerationManager() {
     start(
       ownerId: string,
       target: string,
-      run: (signal: AbortSignal, emit: (chunk: string) => void) => Promise<Pick<Trip, "id">>
+      run: (
+        signal: AbortSignal,
+        emit: (chunk: string) => void,
+        commit: () => void
+      ) => Promise<Pick<Trip, "id">>
     ) {
       prune();
       const previous = active.get(target);
       if (previous) {
         const job = jobs.get(previous);
-        if (job) {
+        if (job && !job.committing) {
           job.controller.abort();
           finish(job, "cancelled");
         }
@@ -121,15 +127,23 @@ export function createGenerationManager() {
         events: [],
         listeners: new Set(),
         controller: new AbortController(),
+        committing: false,
       };
       jobs.set(job.id, job);
       active.set(target, job.id);
       emit(job, "progress", "planning");
       void Promise.resolve().then(async () => {
         try {
-          const trip = await run(job.controller.signal, (chunk) => {
-            if (!job.controller.signal.aborted) emit(job, "chunk", chunk);
-          });
+          const trip = await run(
+            job.controller.signal,
+            (chunk) => {
+              if (!job.controller.signal.aborted) emit(job, "chunk", chunk);
+            },
+            () => {
+              if (job.controller.signal.aborted) throw new Error("Generation cancelled");
+              job.committing = true;
+            }
+          );
           finish(
             job,
             job.controller.signal.aborted ? "cancelled" : "completed",
@@ -144,6 +158,7 @@ export function createGenerationManager() {
     cancel(id: string, ownerId: string) {
       const job = lookup(id, ownerId);
       if (!job) return null;
+      if (job.committing) return view(job);
       job.controller.abort();
       finish(job, "cancelled");
       return view(job);

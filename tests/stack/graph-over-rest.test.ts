@@ -184,6 +184,76 @@ it("reports fast completion and provider failure through authenticated SSE", asy
     await new Promise<void>((done) => failed.close(() => done()));
   }
 });
+
+it("cancels before the save and keeps a save that already started over HTTP/SSE", async () => {
+  let release = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let writing = false;
+  const gatedFetch: typeof fetch = async (input, init) => {
+    if (init?.method === "POST" && new URL(String(input)).pathname === "/trips") {
+      writing = true;
+      await gate;
+    }
+    return countingFetch(input, init);
+  };
+  let hold = true;
+  const app = createApp(
+    parseEnv({ LOG_LEVEL: "error", REST_URL: `http://127.0.0.1:${restPort}` }),
+    {
+      auth: testAuth,
+      restFetch: gatedFetch,
+      providers: {
+        ...mockProviders,
+        llm: {
+          async *stream(_prompt, signal) {
+            while (hold && !signal?.aborted) await new Promise((resolve) => setTimeout(resolve, 5));
+            yield "Planned";
+          },
+        },
+      },
+    }
+  );
+  await new Promise<void>((done) => app.listen(0, "127.0.0.1", done));
+  const address = app.address();
+  if (!address || typeof address === "string") throw new Error("Missing graph port");
+  const post = (query: string) =>
+    request(app).post("/graphql").set("Authorization", "Bearer demo").send({ query });
+  const startQuery =
+    'mutation { startCreateGeneration(input:{city:"Bergen",startDate:"2026-10-01",dayCount:1,preferences:{interests:[],pace:RELAXED}}){id} }';
+  const events = (id: string) =>
+    fetch(`http://127.0.0.1:${address.port}/generations/${encodeURIComponent(id)}/events`, {
+      headers: { Authorization: "Bearer demo" },
+    });
+  try {
+    const early = (await post(startQuery)).body.data.startCreateGeneration.id as string;
+    const stream = await events(early);
+    const cancelled = await post(`mutation { cancelGeneration(id:"${early}") { status } }`);
+    expect(cancelled.body.data.cancelGeneration.status).toBe("cancelled");
+    expect(await stream.text()).toContain('"type":"cancelled"');
+    expect(calls.some((call) => call.method === "POST" && call.path === "/trips")).toBe(false);
+
+    hold = false;
+    const late = (await post(startQuery)).body.data.startCreateGeneration.id as string;
+    await expect.poll(() => writing).toBe(true);
+    const kept = await post(`mutation { cancelGeneration(id:"${late}") { status } }`);
+    expect(kept.body.data.cancelGeneration.status).toBe("running");
+    const done = events(late);
+    release();
+    const final = (await (await done).text()).trim().split("\n\n").at(-1) ?? "";
+    const event = JSON.parse(final.split("data: ")[1] ?? "null") as {
+      type: string;
+      tripId: string;
+    };
+    expect(event.type).toBe("completed");
+    const trip = await post(`{ trip(id:"${event.tripId}") { id } }`);
+    expect(trip.body.data.trip.id).toBe(event.tripId);
+  } finally {
+    release();
+    await new Promise<void>((done) => app.close(() => done()));
+  }
+});
 beforeEach(() => {
   calls = [];
 });

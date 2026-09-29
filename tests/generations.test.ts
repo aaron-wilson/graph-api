@@ -74,3 +74,39 @@ it("counts only running jobs toward capacity and caps each owner", async () => {
   expect(manager.start("busy", "busy:c", hold).status).toBe("running");
   expect(manager.start("other", "other:create", hold).status).toBe("running");
 });
+
+it("ends a committing job with its save and cancels work before the write", async () => {
+  const manager = createGenerationManager();
+  let release = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let writes = 0;
+  let committed = false;
+  const saving = manager.start("demo", "demo:create", async (_signal, _emit, commit) => {
+    commit();
+    committed = true;
+    await gate;
+    writes += 1;
+    return saved;
+  });
+  await vi.waitFor(() => expect(committed).toBe(true));
+  expect(manager.cancel(saving.id, "demo")?.status).toBe("running");
+  const early = manager.start("demo", "demo:create", async (_signal, _emit, commit) => {
+    await gate;
+    commit();
+    writes += 1;
+    return saved;
+  });
+  expect(manager.cancel(early.id, "demo")?.status).toBe("cancelled");
+  release();
+  const final = (id: string) => {
+    const events: GenerationEvent[] = [];
+    manager.subscribe(id, "demo", 0, (event) => events.push(event));
+    return events.at(-1);
+  };
+  await vi.waitFor(() => expect(final(saving.id)?.status).toBe("completed"));
+  expect(final(saving.id)?.tripId).toBe(saved.id);
+  expect(final(early.id)).toMatchObject({ status: "cancelled", tripId: null });
+  expect(writes).toBe(1);
+});
