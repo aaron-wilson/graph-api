@@ -77,6 +77,24 @@ export function createTripService({
     if (!trip) throw new TripNotFound();
     return trip;
   }
+  async function generatedIdeas(
+    city: string,
+    interests: readonly string[],
+    emit: (chunk: string) => void,
+    generationSignal: AbortSignal
+  ) {
+    const ideas = await gatherIdeas(providers, city, interests, generationSignal);
+    const chunks: string[] = [];
+    for await (const chunk of providers.llm.stream(
+      `Plan activities in ${city} for ${interests.join(", ")}`,
+      generationSignal
+    )) {
+      chunks.push(chunk);
+      emit(chunk);
+    }
+    const title = chunks.join("").trim().slice(0, 120);
+    return title ? [title, ...ideas] : ideas;
+  }
   return {
     trip: (tripId: string) => owned().load(parse(id, tripId)),
     async trips(input: { first: number; after?: string | null }) {
@@ -97,11 +115,41 @@ export function createTripService({
       const days = planDays(ideas, plan.startDate, plan.dayCount, plan.preferences.pace, newId);
       return remember(await rest.create({ city: plan.city, preferences: plan.preferences, days }));
     },
+    async generateCreate(
+      input: unknown,
+      emit: (chunk: string) => void,
+      generationSignal: AbortSignal
+    ) {
+      const plan = parse(createInput, input);
+      owned();
+      const ideas = await generatedIdeas(
+        plan.city,
+        plan.preferences.interests,
+        emit,
+        generationSignal
+      );
+      if (generationSignal.aborted) throw new Error("Generation cancelled");
+      const days = planDays(ideas, plan.startDate, plan.dayCount, plan.preferences.pace, newId);
+      return remember(await rest.create({ city: plan.city, preferences: plan.preferences, days }));
+    },
     async refineTrip(input: unknown) {
       const change = parse(refineInput, input);
       const trip = await existing(change.tripId);
       const next = change.preferences ?? trip.preferences;
       const ideas = await gatherIdeas(providers, trip.city, next.interests, signal);
+      const days = refineDays(trip.days, ideas, next.pace, newId);
+      return remember(await rest.update(trip.id, change.version, { preferences: next, days }));
+    },
+    async generateRefine(
+      input: unknown,
+      emit: (chunk: string) => void,
+      generationSignal: AbortSignal
+    ) {
+      const change = parse(refineInput, input);
+      const trip = await existing(change.tripId);
+      const next = change.preferences ?? trip.preferences;
+      const ideas = await generatedIdeas(trip.city, next.interests, emit, generationSignal);
+      if (generationSignal.aborted) throw new Error("Generation cancelled");
       const days = refineDays(trip.days, ideas, next.pace, newId);
       return remember(await rest.update(trip.id, change.version, { preferences: next, days }));
     },

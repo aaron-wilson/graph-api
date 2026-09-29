@@ -8,11 +8,13 @@ import { createInterface } from "node:readline";
 import { createApp } from "../../src/app.js";
 import { Unauthorized, type AuthPort } from "../../src/auth/port.js";
 import { parseEnv } from "../../src/config/env.js";
+import { mockProviders } from "../../src/providers/mock.js";
 
 // Requires Bun and a sibling rest-api checkout with installed dependencies (or REST_API_DIR).
 const restDir = process.env.REST_API_DIR ?? resolve(import.meta.dirname, "../../../rest-api");
 let rest: ChildProcess | undefined;
 let graph: Server | undefined;
+let restPort = 0;
 let calls: { method: string; path: string; auth: string | null; body: unknown }[] = [];
 
 // Mirrors the REST harness principals; GraphQL forwards the same header to REST.
@@ -52,6 +54,7 @@ beforeAll(async () => {
       done((JSON.parse(line) as { port: number }).port);
     });
   });
+  restPort = port;
   const config = parseEnv({ LOG_LEVEL: "error", REST_URL: `http://127.0.0.1:${port}` });
   graph = createApp(config, { auth: testAuth, restFetch: countingFetch });
   await new Promise<void>((done) => graph?.listen(0, "127.0.0.1", done));
@@ -59,6 +62,127 @@ beforeAll(async () => {
 afterAll(async () => {
   if (graph) await new Promise<void>((done) => graph?.close(() => done()));
   rest?.kill();
+});
+
+it("streams ordered generation chunks and persists the completed trip", async () => {
+  const slow = createApp(
+    parseEnv({ LOG_LEVEL: "error", REST_URL: `http://127.0.0.1:${restPort}` }),
+    {
+      auth: testAuth,
+      restFetch: countingFetch,
+      providers: {
+        ...mockProviders,
+        llm: {
+          async *stream(_prompt, signal) {
+            for (const chunk of ["First ", "second"]) {
+              if (signal?.aborted) return;
+              await new Promise((resolve) => setTimeout(resolve, 20));
+              yield chunk;
+            }
+          },
+        },
+      },
+    }
+  );
+  await new Promise<void>((done) => slow.listen(0, "127.0.0.1", done));
+  try {
+    const start = await request(slow).post("/graphql").set("Authorization", "Bearer demo").send({
+      query:
+        'mutation { startCreateGeneration(input: {city:"Oslo", startDate:"2026-10-01", dayCount:1, preferences:{interests:["art"], pace:RELAXED}}) { id status } }',
+    });
+    const id = start.body.data.startCreateGeneration.id as string;
+    const address = slow.address();
+    if (!address || typeof address === "string") throw new Error("Missing graph port");
+    const url = `http://127.0.0.1:${address.port}/generations/${encodeURIComponent(id)}/events`;
+    expect((await fetch(url, { headers: { Authorization: "Bearer other" } })).status).toBe(404);
+    const response = await fetch(url, { headers: { Authorization: "Bearer demo" } });
+    expect(response.status).toBe(200);
+    const frames = (await response.text())
+      .split("\n\n")
+      .filter(Boolean)
+      .map(
+        (frame) =>
+          JSON.parse(frame.split("\ndata: ")[1] ?? "null") as {
+            seq: number;
+            type: string;
+            text: string | null;
+            tripId: string | null;
+          }
+      );
+    expect(frames.map((frame) => frame.seq)).toEqual(
+      [...frames.map((frame) => frame.seq)].sort((a, b) => a - b)
+    );
+    expect(frames.filter((frame) => frame.type === "chunk").map((frame) => frame.text)).toEqual([
+      "First ",
+      "second",
+    ]);
+    const tripId = frames.at(-1)?.tripId;
+    expect(frames.at(-1)?.type).toBe("completed");
+    const trip = await request(slow)
+      .post("/graphql")
+      .set("Authorization", "Bearer demo")
+      .send({ query: `{ trip(id:"${tripId}") { id days { activities { title } } } }` });
+    expect(trip.body.data.trip.id).toBe(tripId);
+    expect(JSON.stringify(trip.body.data.trip.days)).toContain("First second");
+    const replay = await fetch(url, {
+      headers: { Authorization: "Bearer demo", "Last-Event-ID": "1" },
+    });
+    expect(await replay.text()).toContain('"type":"completed"');
+  } finally {
+    await new Promise<void>((done) => slow.close(() => done()));
+  }
+});
+
+it("reports fast completion and provider failure through authenticated SSE", async () => {
+  if (!graph) throw new Error("GraphQL server not started");
+  const started = await gql(
+    'mutation { startCreateGeneration(input:{city:"Fast",startDate:"2026-10-01",dayCount:1,preferences:{interests:[],pace:RELAXED}}){id} }'
+  );
+  const id = (started.data as { startCreateGeneration: { id: string } }).startCreateGeneration.id;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const address = graph.address();
+  if (!address || typeof address === "string") throw new Error("Missing graph port");
+  const view = await fetch(
+    `http://127.0.0.1:${address.port}/generations/${encodeURIComponent(id)}/events`,
+    { headers: { Authorization: "Bearer demo" } }
+  );
+  expect(await view.text()).toContain('"status":"completed"');
+
+  const failed = createApp(
+    parseEnv({ LOG_LEVEL: "error", REST_URL: `http://127.0.0.1:${restPort}` }),
+    {
+      auth: testAuth,
+      restFetch: countingFetch,
+      providers: {
+        ...mockProviders,
+        llm: {
+          async *stream() {
+            yield "";
+            throw new Error("vendor failed");
+          },
+        },
+      },
+    }
+  );
+  await new Promise<void>((done) => failed.listen(0, "127.0.0.1", done));
+  try {
+    calls = [];
+    const result = await request(failed).post("/graphql").set("Authorization", "Bearer demo").send({
+      query:
+        'mutation { startCreateGeneration(input:{city:"Fail",startDate:"2026-10-01",dayCount:1,preferences:{interests:[],pace:RELAXED}}){id} }',
+    });
+    const failedId = result.body.data.startCreateGeneration.id as string;
+    const failedAddress = failed.address();
+    if (!failedAddress || typeof failedAddress === "string") throw new Error("Missing graph port");
+    const stream = await fetch(
+      `http://127.0.0.1:${failedAddress.port}/generations/${encodeURIComponent(failedId)}/events`,
+      { headers: { Authorization: "Bearer demo" } }
+    );
+    expect(await stream.text()).toContain('"status":"failed"');
+    expect(calls.some((call) => call.method === "POST" && call.path === "/trips")).toBe(false);
+  } finally {
+    await new Promise<void>((done) => failed.close(() => done()));
+  }
 });
 beforeEach(() => {
   calls = [];

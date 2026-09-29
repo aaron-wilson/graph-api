@@ -37,8 +37,16 @@ export type Day = {
   id: Scalars['ID']['output'];
 };
 
+export type Generation = {
+  __typename?: 'Generation';
+  id: Scalars['ID']['output'];
+  status: Scalars['String']['output'];
+  tripId: Maybe<Scalars['ID']['output']>;
+};
+
 export type Mutation = {
   __typename?: 'Mutation';
+  cancelGeneration: Generation;
   /** Plans activities with the configured providers and saves the trip. */
   createTrip: Trip;
   pinActivity: Trip;
@@ -46,8 +54,16 @@ export type Mutation = {
   refineTrip: Trip;
   /** Creates or replaces the public share link. */
   shareTrip: Trip;
+  /** Starts a process-local itinerary generation; stream events over the authenticated SSE endpoint. */
+  startCreateGeneration: Generation;
+  startRefineGeneration: Generation;
   /** Replaces one unpinned activity with a new titled activity. */
   swapActivity: Trip;
+};
+
+
+export type MutationCancelGenerationArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -68,6 +84,16 @@ export type MutationRefineTripArgs = {
 
 export type MutationShareTripArgs = {
   input: ShareTripInput;
+};
+
+
+export type MutationStartCreateGenerationArgs = {
+  input: CreateTripInput;
+};
+
+
+export type MutationStartRefineGenerationArgs = {
+  input: RefineTripInput;
 };
 
 
@@ -261,6 +287,7 @@ export type ResolversTypes = ResolversObject<{
   Boolean: ResolverTypeWrapper<Scalars['Boolean']['output']>;
   CreateTripInput: CreateTripInput;
   Day: ResolverTypeWrapper<Day>;
+  Generation: ResolverTypeWrapper<Generation>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   Int: ResolverTypeWrapper<Scalars['Int']['output']>;
   Mutation: ResolverTypeWrapper<Record<PropertyKey, never>>;
@@ -285,6 +312,7 @@ export type ResolversParentTypes = ResolversObject<{
   Boolean: Scalars['Boolean']['output'];
   CreateTripInput: CreateTripInput;
   Day: Day;
+  Generation: Generation;
   ID: Scalars['ID']['output'];
   Int: Scalars['Int']['output'];
   Mutation: Record<PropertyKey, never>;
@@ -314,11 +342,20 @@ export type DayResolvers<ContextType = GraphContext, ParentType extends Resolver
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
 }>;
 
+export type GenerationResolvers<ContextType = GraphContext, ParentType extends ResolversParentTypes['Generation'] = ResolversParentTypes['Generation']> = ResolversObject<{
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  tripId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+}>;
+
 export type MutationResolvers<ContextType = GraphContext, ParentType extends ResolversParentTypes['Mutation'] = ResolversParentTypes['Mutation']> = ResolversObject<{
+  cancelGeneration?: Resolver<ResolversTypes['Generation'], ParentType, ContextType, RequireFields<MutationCancelGenerationArgs, 'id'>>;
   createTrip?: Resolver<ResolversTypes['Trip'], ParentType, ContextType, RequireFields<MutationCreateTripArgs, 'input'>>;
   pinActivity?: Resolver<ResolversTypes['Trip'], ParentType, ContextType, RequireFields<MutationPinActivityArgs, 'input'>>;
   refineTrip?: Resolver<ResolversTypes['Trip'], ParentType, ContextType, RequireFields<MutationRefineTripArgs, 'input'>>;
   shareTrip?: Resolver<ResolversTypes['Trip'], ParentType, ContextType, RequireFields<MutationShareTripArgs, 'input'>>;
+  startCreateGeneration?: Resolver<ResolversTypes['Generation'], ParentType, ContextType, RequireFields<MutationStartCreateGenerationArgs, 'input'>>;
+  startRefineGeneration?: Resolver<ResolversTypes['Generation'], ParentType, ContextType, RequireFields<MutationStartRefineGenerationArgs, 'input'>>;
   swapActivity?: Resolver<ResolversTypes['Trip'], ParentType, ContextType, RequireFields<MutationSwapActivityArgs, 'input'>>;
 }>;
 
@@ -368,6 +405,7 @@ export type TripPageResolvers<ContextType = GraphContext, ParentType extends Res
 export type Resolvers<ContextType = GraphContext> = ResolversObject<{
   Activity?: ActivityResolvers<ContextType>;
   Day?: DayResolvers<ContextType>;
+  Generation?: GenerationResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
   Pace?: PaceResolvers;
   Preferences?: PreferencesResolvers<ContextType>;
@@ -380,4 +418,4 @@ export type Resolvers<ContextType = GraphContext> = ResolversObject<{
 
 
 
-export const typeDefs = "type Activity {\n  id: ID!\n  pinned: Boolean!\n  title: String!\n}\n\ninput CreateTripInput {\n  city: String!\n  dayCount: Int!\n  preferences: PreferencesInput!\n\n  \"\"\"First day, YYYY-MM-DD.\"\"\"\n  startDate: String!\n}\n\ntype Day {\n  activities: [Activity!]!\n\n  \"\"\"Calendar date, YYYY-MM-DD.\"\"\"\n  date: String!\n  id: ID!\n}\n\ntype Mutation {\n  \"\"\"Plans activities with the configured providers and saves the trip.\"\"\"\n  createTrip(input: CreateTripInput!): Trip!\n  pinActivity(input: PinActivityInput!): Trip!\n\n  \"\"\"Replans every unpinned activity, optionally with new preferences.\"\"\"\n  refineTrip(input: RefineTripInput!): Trip!\n\n  \"\"\"Creates or replaces the public share link.\"\"\"\n  shareTrip(input: ShareTripInput!): Trip!\n\n  \"\"\"Replaces one unpinned activity with a new titled activity.\"\"\"\n  swapActivity(input: SwapActivityInput!): Trip!\n}\n\nenum Pace {\n  BALANCED\n  BUSY\n  RELAXED\n}\n\ninput PinActivityInput {\n  activityId: ID!\n  pinned: Boolean!\n  tripId: ID!\n  version: Int!\n}\n\ntype Preferences {\n  interests: [String!]!\n  pace: Pace!\n}\n\ninput PreferencesInput {\n  interests: [String!]!\n  pace: Pace!\n}\n\n\"\"\"\nWander trip graph. REST owns trip persistence; this graph plans activities and batches reads.\n\"\"\"\ntype Query {\n  \"\"\"A read-only public projection; requires no authentication.\"\"\"\n  sharedTrip(ownerId: ID!, token: String!, tripId: ID!): SharedTrip\n\n  \"\"\"An owned trip, or null when it does not exist for the caller.\"\"\"\n  trip(id: ID!): Trip\n\n  \"\"\"Owned trips in stable REST cursor order.\"\"\"\n  trips(after: String, first: Int! = 20): TripPage!\n}\n\ninput RefineTripInput {\n  preferences: PreferencesInput\n  tripId: ID!\n  version: Int!\n}\n\ntype ShareLink {\n  createdAt: String!\n  expiresAt: String!\n  token: String!\n}\n\ninput ShareTripInput {\n  tripId: ID!\n  version: Int!\n}\n\ntype SharedTrip {\n  city: String!\n  days: [Day!]!\n  id: ID!\n  updatedAt: String!\n}\n\ninput SwapActivityInput {\n  activityId: ID!\n  title: String!\n  tripId: ID!\n  version: Int!\n}\n\ntype Trip {\n  city: String!\n  createdAt: String!\n  days: [Day!]!\n  id: ID!\n  ownerId: ID!\n  preferences: Preferences!\n  share: ShareLink\n  updatedAt: String!\n\n  \"\"\"Optimistic concurrency version; pass it back to every mutation.\"\"\"\n  version: Int!\n}\n\ntype TripPage {\n  items: [Trip!]!\n  nextCursor: String\n}";
+export const typeDefs = "type Activity {\n  id: ID!\n  pinned: Boolean!\n  title: String!\n}\n\ninput CreateTripInput {\n  city: String!\n  dayCount: Int!\n  preferences: PreferencesInput!\n\n  \"\"\"First day, YYYY-MM-DD.\"\"\"\n  startDate: String!\n}\n\ntype Day {\n  activities: [Activity!]!\n\n  \"\"\"Calendar date, YYYY-MM-DD.\"\"\"\n  date: String!\n  id: ID!\n}\n\ntype Generation {\n  id: ID!\n  status: String!\n  tripId: ID\n}\n\ntype Mutation {\n  cancelGeneration(id: ID!): Generation!\n\n  \"\"\"Plans activities with the configured providers and saves the trip.\"\"\"\n  createTrip(input: CreateTripInput!): Trip!\n  pinActivity(input: PinActivityInput!): Trip!\n\n  \"\"\"Replans every unpinned activity, optionally with new preferences.\"\"\"\n  refineTrip(input: RefineTripInput!): Trip!\n\n  \"\"\"Creates or replaces the public share link.\"\"\"\n  shareTrip(input: ShareTripInput!): Trip!\n\n  \"\"\"\n  Starts a process-local itinerary generation; stream events over the authenticated SSE endpoint.\n  \"\"\"\n  startCreateGeneration(input: CreateTripInput!): Generation!\n  startRefineGeneration(input: RefineTripInput!): Generation!\n\n  \"\"\"Replaces one unpinned activity with a new titled activity.\"\"\"\n  swapActivity(input: SwapActivityInput!): Trip!\n}\n\nenum Pace {\n  BALANCED\n  BUSY\n  RELAXED\n}\n\ninput PinActivityInput {\n  activityId: ID!\n  pinned: Boolean!\n  tripId: ID!\n  version: Int!\n}\n\ntype Preferences {\n  interests: [String!]!\n  pace: Pace!\n}\n\ninput PreferencesInput {\n  interests: [String!]!\n  pace: Pace!\n}\n\n\"\"\"\nWander trip graph. REST owns trip persistence; this graph plans activities and batches reads.\n\"\"\"\ntype Query {\n  \"\"\"A read-only public projection; requires no authentication.\"\"\"\n  sharedTrip(ownerId: ID!, token: String!, tripId: ID!): SharedTrip\n\n  \"\"\"An owned trip, or null when it does not exist for the caller.\"\"\"\n  trip(id: ID!): Trip\n\n  \"\"\"Owned trips in stable REST cursor order.\"\"\"\n  trips(after: String, first: Int! = 20): TripPage!\n}\n\ninput RefineTripInput {\n  preferences: PreferencesInput\n  tripId: ID!\n  version: Int!\n}\n\ntype ShareLink {\n  createdAt: String!\n  expiresAt: String!\n  token: String!\n}\n\ninput ShareTripInput {\n  tripId: ID!\n  version: Int!\n}\n\ntype SharedTrip {\n  city: String!\n  days: [Day!]!\n  id: ID!\n  updatedAt: String!\n}\n\ninput SwapActivityInput {\n  activityId: ID!\n  title: String!\n  tripId: ID!\n  version: Int!\n}\n\ntype Trip {\n  city: String!\n  createdAt: String!\n  days: [Day!]!\n  id: ID!\n  ownerId: ID!\n  preferences: Preferences!\n  share: ShareLink\n  updatedAt: String!\n\n  \"\"\"Optimistic concurrency version; pass it back to every mutation.\"\"\"\n  version: Int!\n}\n\ntype TripPage {\n  items: [Trip!]!\n  nextCursor: String\n}";

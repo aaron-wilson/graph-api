@@ -1,4 +1,5 @@
 import type { Resolvers } from "./generated.js";
+import { Unauthenticated, TripNotFound } from "../trips/errors.js";
 
 export const resolvers: Resolvers = {
   Pace: { RELAXED: "relaxed", BALANCED: "balanced", BUSY: "busy" },
@@ -13,5 +14,23 @@ export const resolvers: Resolvers = {
     pinActivity: (_, { input }, { trips }) => trips.pinActivity(input),
     swapActivity: (_, { input }, { trips }) => trips.swapActivity(input),
     shareTrip: (_, { input }, { trips }) => trips.shareTrip(input),
+    startCreateGeneration: (_, { input }, { trips, generations, principal }) => {
+      if (!principal) throw new Unauthenticated();
+      return generations.start(principal.id, `${principal.id}:create`, (signal, emit) =>
+        trips.generateCreate(input, emit, signal)
+      );
+    },
+    startRefineGeneration: (_, { input }, { trips, generations, principal }) => {
+      if (!principal) throw new Unauthenticated();
+      return generations.start(principal.id, `${principal.id}:${input.tripId}`, (signal, emit) =>
+        trips.generateRefine(input, emit, signal)
+      );
+    },
+    cancelGeneration: (_, { id }, { generations, principal }) => {
+      if (!principal) throw new Unauthenticated();
+      const job = generations.cancel(id, principal.id);
+      if (!job) throw new TripNotFound();
+      return job;
+    },
   },
 };

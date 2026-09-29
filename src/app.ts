@@ -11,6 +11,7 @@ import { tripSchema } from "./graphql/schema.js";
 import { createProviders } from "./providers/index.js";
 import type { PlanningProviders } from "./providers/port.js";
 import { createLogger } from "./lib/utils.js";
+import { createGenerationManager } from "./trips/generations.js";
 
 export interface AppDeps {
   providers: PlanningProviders;
@@ -23,6 +24,7 @@ export function createApp(config: ReturnType<typeof parseEnv>, deps: Partial<App
   if (config.appMode === "live" && auth === demoAuth)
     throw new Error("Demo auth is unavailable in live mode");
   const log = createLogger(config.logLevel);
+  const generations = createGenerationManager();
   const yoga = createYoga({
     schema: tripSchema,
     context: createContextFactory({
@@ -31,6 +33,7 @@ export function createApp(config: ReturnType<typeof parseEnv>, deps: Partial<App
       restUrl: config.restUrl,
       restTimeoutMs: config.restTimeoutMs,
       restFetch: deps.restFetch ?? fetch,
+      generations,
     }),
     plugins: [
       queryLimits({
@@ -59,6 +62,81 @@ export function createApp(config: ReturnType<typeof parseEnv>, deps: Partial<App
     if (request.url === "/health") {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ status: "healthy" }));
+      return;
+    }
+    const url = new URL(request.url ?? "/", "http://localhost");
+    if (url.pathname.startsWith("/generations/") && url.pathname.endsWith("/events")) {
+      response.setHeader("Access-Control-Allow-Origin", config.corsOrigin);
+      response.setHeader("Access-Control-Allow-Headers", "Authorization, Last-Event-ID");
+      response.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+      if (request.method === "OPTIONS") {
+        response.writeHead(204);
+        response.end();
+        return;
+      }
+      if (request.method !== "GET") {
+        response.writeHead(405);
+        response.end();
+        return;
+      }
+      let id: string;
+      try {
+        id = decodeURIComponent(url.pathname.slice("/generations/".length, -"/events".length));
+      } catch {
+        response.writeHead(400);
+        response.end();
+        return;
+      }
+      const header = request.headers.authorization ?? null;
+      void auth
+        .authenticate(header)
+        .then((principal) => {
+          if (!principal) {
+            response.writeHead(401);
+            response.end();
+            return;
+          }
+          if (!generations.owns(id, principal.id)) {
+            response.writeHead(404);
+            response.end();
+            return;
+          }
+          const from = Number(
+            request.headers["last-event-id"] ?? url.searchParams.get("after") ?? 0
+          );
+          response.writeHead(200, {
+            "content-type": "text/event-stream; charset=utf-8",
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+            connection: "keep-alive",
+          });
+          let stop: () => void = () => undefined;
+          const heartbeat = setInterval(() => response.write(": keepalive\n\n"), 15000);
+          heartbeat.unref();
+          response.on("close", () => {
+            clearInterval(heartbeat);
+            stop();
+          });
+          const result = generations.subscribe(
+            id,
+            principal.id,
+            Number.isSafeInteger(from) && from >= 0 ? from : 0,
+            (event) => {
+              response.write(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`);
+              if (event.status !== "running") response.end();
+            }
+          );
+          if (!result) {
+            clearInterval(heartbeat);
+            response.end();
+            return;
+          }
+          stop = result;
+        })
+        .catch(() => {
+          if (!response.headersSent) response.writeHead(401);
+          response.end();
+        });
       return;
     }
     Promise.resolve(yoga(request, response)).catch((error: unknown) => {

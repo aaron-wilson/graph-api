@@ -20,6 +20,16 @@ type Mutation {
   swapActivity(input: SwapActivityInput!): Trip!
   "Creates or replaces the public share link."
   shareTrip(input: ShareTripInput!): Trip!
+  "Starts a process-local itinerary generation; stream events over the authenticated SSE endpoint."
+  startCreateGeneration(input: CreateTripInput!): Generation!
+  startRefineGeneration(input: RefineTripInput!): Generation!
+  cancelGeneration(id: ID!): Generation!
+}
+
+type Generation {
+  id: ID!
+  status: String!
+  tripId: ID
 }
 
 enum Pace {
