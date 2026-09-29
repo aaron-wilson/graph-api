@@ -6,8 +6,8 @@ export interface HttpTransport {
   timeoutMs: number;
 }
 function classify(error: unknown, signal?: AbortSignal): ProviderError {
-  if (error instanceof ProviderError) return error;
   if (signal?.aborted) return new ProviderError("cancelled");
+  if (error instanceof ProviderError) return error;
   if (typeof error === "object" && error !== null && "status" in error && error.status === 429)
     return new ProviderError("rate_limit");
   if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError"))
@@ -28,8 +28,13 @@ async function boundedText(response: Response, maxBytes = 200_000) {
       chunks.push(value);
     }
   } finally {
-    await reader.cancel();
-    reader.releaseLock();
+    try {
+      await reader.cancel();
+    } catch {
+      // A failed body read already carries the provider error.
+    } finally {
+      reader.releaseLock();
+    }
   }
   const merged = new Uint8Array(size);
   let offset = 0;
@@ -64,9 +69,10 @@ export async function getJson<T extends z.ZodTypeAny>(
         }
         throw new ProviderError("unavailable");
       }
+      const responseText = await boundedText(response);
       let parsed: unknown;
       try {
-        parsed = JSON.parse(await boundedText(response));
+        parsed = JSON.parse(responseText);
       } catch {
         throw new ProviderError("invalid_response");
       }

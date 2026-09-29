@@ -75,13 +75,84 @@ it("validates weather, places and events through injected HTTP transports", asyn
       json({ _embedded: { events: [{ name: "Bad", dates: { start: { localDate: "wrong" } } }] } })
     )
   );
-  await expect(malformed.find("Rome")).rejects.toMatchObject({ code: "invalid_response" });
+  await expect(malformed.find("Rome")).resolves.toEqual([]);
   await expect(
     createWttrWeather(
       "https://wttr.test",
       transport(async () => json({ bad: true }))
     ).current("Rome")
   ).rejects.toMatchObject({ code: "invalid_response" });
+});
+
+it("filters invalid vendor items after validating collection envelopes", async () => {
+  const event = (events: unknown) =>
+    createTicketmasterEvents(
+      "https://ticket.test/events",
+      "local-key",
+      transport(async () => json({ _embedded: { events } }))
+    );
+  const place = (elements: unknown) =>
+    createOverpassPlaces(
+      "https://overpass.test",
+      transport(async () => json({ elements }))
+    );
+  const validEvent = { name: "E".repeat(121), dates: { start: { localDate: "2026-10-02" } } };
+  const invalidEvent = { name: "TBA", dates: { start: { dateTBA: true } } };
+  expect(await event([invalidEvent, validEvent]).find("Rome")).toEqual([
+    { name: "E".repeat(120), date: "2026-10-02" },
+  ]);
+  expect(await event([...Array(10).fill(invalidEvent), validEvent]).find("Rome")).toHaveLength(1);
+  expect(await event([invalidEvent]).find("Rome")).toEqual([]);
+  await expect(event({ bad: true }).find("Rome")).rejects.toMatchObject({
+    code: "invalid_response",
+  });
+  const validPlace = { tags: { name: "P".repeat(121), tourism: "attraction" } };
+  expect(await place([{ tags: { name: "  ", tourism: "bad" } }, validPlace]).find("Rome")).toEqual([
+    { name: "P".repeat(120), category: "attraction" },
+  ]);
+  expect(await place([...Array(10).fill({}), validPlace]).find("Rome")).toHaveLength(1);
+  expect(await place([{ tags: { name: "  " } }]).find("Rome")).toEqual([]);
+  await expect(place({ bad: true }).find("Rome")).rejects.toMatchObject({
+    code: "invalid_response",
+  });
+});
+
+it("retries body-read timeouts and preserves caller cancellation", async () => {
+  const responses: Response[] = [];
+  const stalled = (_url: string, init?: RequestInit) => {
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason));
+        },
+      })
+    );
+    responses.push(response);
+    return response;
+  };
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) =>
+    fetcher.mock.calls.length === 1 ? stalled(url, init) : json({ ok: true })
+  ) as typeof fetch;
+  await expect(
+    getJson({ fetch: fetcher, timeoutMs: 20 }, "https://test", z.object({ ok: z.boolean() }))
+  ).resolves.toEqual({ ok: true });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  const exhausted = vi.fn(stalled) as typeof fetch;
+  await expect(
+    getJson({ fetch: exhausted, timeoutMs: 20 }, "https://test", z.object({}))
+  ).rejects.toMatchObject({ code: "timeout" });
+  expect(exhausted).toHaveBeenCalledTimes(3);
+  const controller = new AbortController();
+  const pending = getJson(
+    { fetch: stalled as typeof fetch, timeoutMs: 1000 },
+    "https://test",
+    z.object({}),
+    {},
+    controller.signal
+  );
+  setTimeout(() => controller.abort(), 5);
+  await expect(pending).rejects.toMatchObject({ code: "cancelled" });
+  expect(responses.every((response) => response.body?.locked === false)).toBe(true);
 });
 
 it("bounds retries, timeouts, cancellation and response size", async () => {

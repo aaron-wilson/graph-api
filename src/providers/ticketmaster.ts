@@ -1,20 +1,17 @@
 import { z } from "zod";
 import { getJson, type HttpTransport } from "./http.js";
-import { citySchema, eventSchema, type EventsProvider, ProviderError } from "./port.js";
+import { citySchema, eventSchema, type EventsProvider } from "./port.js";
 
 const responseSchema = z.object({
   _embedded: z
     .object({
-      events: z
-        .array(
-          z.object({
-            name: z.string(),
-            dates: z.object({ start: z.object({ localDate: z.string() }) }),
-          })
-        )
-        .max(100),
+      events: z.array(z.unknown()).max(100),
     })
     .optional(),
+});
+const itemSchema = z.object({
+  name: z.string(),
+  dates: z.object({ start: z.object({ localDate: z.string().optional() }) }),
 });
 export function createTicketmasterEvents(
   endpoint: string,
@@ -28,13 +25,18 @@ export function createTicketmasterEvents(
       url.searchParams.set("city", citySchema.parse(city));
       url.searchParams.set("size", "10");
       const raw = await getJson(transport, url.toString(), responseSchema, {}, signal);
-      const events = (raw._embedded?.events ?? []).slice(0, 10).map((item) => ({
-        name: item.name,
-        date: item.dates.start.localDate,
-      }));
-      const parsed = z.array(eventSchema).safeParse(events);
-      if (!parsed.success) throw new ProviderError("invalid_response");
-      return parsed.data;
+      const events: z.infer<typeof eventSchema>[] = [];
+      for (const value of raw._embedded?.events ?? []) {
+        const item = itemSchema.safeParse(value);
+        if (!item.success) continue;
+        const parsed = eventSchema.safeParse({
+          name: item.data.name.trim().slice(0, 120),
+          date: item.data.dates.start.localDate,
+        });
+        if (parsed.success) events.push(parsed.data);
+        if (events.length === 10) break;
+      }
+      return events;
     },
   };
 }

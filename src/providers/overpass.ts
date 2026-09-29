@@ -1,15 +1,12 @@
 import { z } from "zod";
 import { getJson, type HttpTransport } from "./http.js";
-import { citySchema, placeSchema, type PlacesProvider, ProviderError } from "./port.js";
+import { citySchema, placeSchema, type PlacesProvider } from "./port.js";
 
 const responseSchema = z.object({
-  elements: z
-    .array(
-      z.object({
-        tags: z.object({ name: z.string().optional(), tourism: z.string().optional() }).optional(),
-      })
-    )
-    .max(100),
+  elements: z.array(z.unknown()).max(100),
+});
+const itemSchema = z.object({
+  tags: z.object({ name: z.string().optional(), tourism: z.string().optional() }).optional(),
 });
 export function createOverpassPlaces(endpoint: string, transport: HttpTransport): PlacesProvider {
   return {
@@ -27,16 +24,18 @@ export function createOverpassPlaces(endpoint: string, transport: HttpTransport)
         },
         signal
       );
-      const places = raw.elements
-        .filter((item) => item.tags?.name)
-        .slice(0, 10)
-        .map((item) => ({
-          name: item.tags?.name ?? "",
-          category: item.tags?.tourism ?? "attraction",
-        }));
-      const parsed = z.array(placeSchema).safeParse(places);
-      if (!parsed.success) throw new ProviderError("invalid_response");
-      return parsed.data;
+      const places: z.infer<typeof placeSchema>[] = [];
+      for (const value of raw.elements) {
+        const item = itemSchema.safeParse(value);
+        if (!item.success) continue;
+        const parsed = placeSchema.safeParse({
+          name: item.data.tags?.name?.trim().slice(0, 120) ?? "",
+          category: item.data.tags?.tourism ?? "attraction",
+        });
+        if (parsed.success) places.push(parsed.data);
+        if (places.length === 10) break;
+      }
+      return places;
     },
   };
 }
