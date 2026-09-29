@@ -18,6 +18,8 @@ interface Job {
   status: GenerationStatus;
   tripId: string | null;
   seq: number;
+  /** Text streamed so far, sent in snapshots when replay cannot serve a subscriber. */
+  text: string;
   events: { at: number; event: GenerationEvent }[];
   listeners: Set<(event: GenerationEvent) => void>;
   controller: AbortController;
@@ -29,6 +31,7 @@ const MAX_EVENTS = 100;
 const MAX_RUNNING = 100;
 const MAX_RUNNING_PER_OWNER = 3;
 const MAX_RETAINED = 100;
+const MAX_TEXT = 4000;
 
 function ownerFromId(id: string) {
   const [encoded, uuid] = id.split(":");
@@ -51,7 +54,7 @@ export function createGenerationManager() {
     type: "snapshot",
     status: job.status,
     tripId: job.tripId,
-    text: null,
+    text: job.text,
   });
   const prune = () => {
     const now = Date.now();
@@ -124,6 +127,7 @@ export function createGenerationManager() {
         status: "running",
         tripId: null,
         seq: 0,
+        text: "",
         events: [],
         listeners: new Set(),
         controller: new AbortController(),
@@ -137,7 +141,9 @@ export function createGenerationManager() {
           const trip = await run(
             job.controller.signal,
             (chunk) => {
-              if (!job.controller.signal.aborted) emit(job, "chunk", chunk);
+              if (job.controller.signal.aborted) return;
+              job.text = (job.text + chunk).slice(0, MAX_TEXT);
+              emit(job, "chunk", chunk);
             },
             () => {
               if (job.controller.signal.aborted) throw new Error("Generation cancelled");

@@ -74,9 +74,9 @@ it("streams ordered generation chunks and persists the completed trip", async ()
         ...mockProviders,
         llm: {
           async *stream(_prompt, signal) {
+            // No delay: chunks emitted before the first subscriber must still reach it.
             for (const chunk of ["First ", "second"]) {
               if (signal?.aborted) return;
-              await new Promise((resolve) => setTimeout(resolve, 20));
               yield chunk;
             }
           },
@@ -112,10 +112,12 @@ it("streams ordered generation chunks and persists the completed trip", async ()
     expect(frames.map((frame) => frame.seq)).toEqual(
       [...frames.map((frame) => frame.seq)].sort((a, b) => a - b)
     );
-    expect(frames.filter((frame) => frame.type === "chunk").map((frame) => frame.text)).toEqual([
-      "First ",
-      "second",
-    ]);
+    expect(
+      frames
+        .filter((frame) => frame.type === "snapshot" || frame.type === "chunk")
+        .map((frame) => frame.text)
+        .join("")
+    ).toBe("First second");
     const tripId = frames.at(-1)?.tripId;
     expect(frames.at(-1)?.type).toBe("completed");
     const trip = await request(slow)

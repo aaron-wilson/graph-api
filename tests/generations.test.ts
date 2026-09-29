@@ -110,3 +110,36 @@ it("ends a committing job with its save and cancels work before the write", asyn
   expect(final(early.id)).toMatchObject({ status: "cancelled", tripId: null });
   expect(writes).toBe(1);
 });
+
+it("sends accumulated text to subscribers that replay cannot serve", async () => {
+  const manager = createGenerationManager();
+  let release = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let waiting = false;
+  const job = manager.start("demo", "demo:create", async (_signal, emit) => {
+    emit("alpha ");
+    emit("beta ");
+    for (let index = 0; index < 120; index += 1) emit(".");
+    waiting = true;
+    await gate;
+    emit("gamma");
+    return saved;
+  });
+  await vi.waitFor(() => expect(waiting).toBe(true));
+  const fresh: GenerationEvent[] = [];
+  const outside: GenerationEvent[] = [];
+  manager.subscribe(job.id, "demo", 0, (event) => fresh.push(event));
+  // Seq 2 has left the 100-event window, so replay cannot serve it.
+  manager.subscribe(job.id, "demo", 2, (event) => outside.push(event));
+  release();
+  await vi.waitFor(() => expect(outside.at(-1)?.type).toBe("completed"));
+  for (const events of [fresh, outside]) {
+    expect(events[0]?.type).toBe("snapshot");
+    expect(events.map((event) => event.text ?? "").join("")).toBe(
+      `alpha beta ${".".repeat(120)}gamma`
+    );
+    expect(new Set(events.map((event) => event.seq)).size).toBe(events.length);
+  }
+});
