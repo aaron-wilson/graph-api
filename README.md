@@ -1,5 +1,11 @@
 # graph-api
 
+> **Current implementation:** GraphQL Yoga runs a deterministic planner with configurable
+> weather, places, events, and LLM adapters. All providers default to offline mocks. Real
+> providers require only their selected credentials and model settings. The current `planTrip`
+> query is temporary; the REST-backed trip graph follows in task 8. Direct DynamoDB access,
+> Lambda hosting, active CI deployment, and live observability claimed below are not implemented.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > A TypeScript-first, Node-based GraphQL API using Yoga, AWS DynamoDB, and AWS Cognito for secure, scalable, and type-safe serverless operations.

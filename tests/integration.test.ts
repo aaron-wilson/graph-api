@@ -4,6 +4,7 @@ import type { Server } from "node:http";
 import { GraphQLError } from "graphql";
 import { createApp } from "../src/app.js";
 import { parseEnv } from "../src/config/env.js";
+import { mockProviders } from "../src/providers/mock.js";
 
 let server: Server | undefined;
 afterEach(async () => {
@@ -12,10 +13,13 @@ afterEach(async () => {
 });
 it("masks provider errors even when they resemble input errors", async () => {
   server = createApp(parseEnv({ LOG_LEVEL: "error" }), {
-    current: async () => {
-      throw new GraphQLError("Invalid planTrip input", {
-        extensions: { code: "BAD_USER_INPUT" },
-      });
+    ...mockProviders,
+    weather: {
+      current: async () => {
+        throw new GraphQLError("Invalid planTrip input", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      },
     },
   });
   await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", resolve));
@@ -34,7 +38,7 @@ it("serves health and a deterministic query over HTTP", async () => {
       '{ planTrip(city:"Lisbon", preferences:["museums"]) { currentWeather activityOptions itinerary } }',
   });
   expect(result.status).toBe(200);
-  expect(result.body.data.planTrip.activityOptions).toEqual(["Explore museums in Lisbon"]);
+  expect(result.body.data.planTrip.activityOptions).toContain("Explore museums in Lisbon");
   expect(result.body.data.planTrip.currentWeather).toBeTruthy();
   const bad = await request(server)
     .post("/graphql")
@@ -53,8 +57,11 @@ it("masks provider failures in development and logs only safe structured events"
   process.env.NODE_ENV = "development";
   try {
     server = createApp(parseEnv({ LOG_LEVEL: "error" }), {
-      current: async () => {
-        throw new Error("REVIEW_PRIVATE_SENTINEL");
+      ...mockProviders,
+      weather: {
+        current: async () => {
+          throw new Error("REVIEW_PRIVATE_SENTINEL");
+        },
       },
     });
     await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", resolve));

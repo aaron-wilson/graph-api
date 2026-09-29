@@ -1,7 +1,8 @@
 import { createSchema } from "graphql-yoga";
-import { createResolvers, type WeatherProvider } from "./resolvers.js";
+import { createResolvers } from "./resolvers.js";
+import type { PlanningProviders } from "../providers/port.js";
 
-export function createTripSchema(weather: WeatherProvider) {
+export function createTripSchema(providers: PlanningProviders) {
   return createSchema({
     typeDefs: /* GraphQL */ `
       type Query {
@@ -13,6 +14,6 @@ export function createTripSchema(weather: WeatherProvider) {
         activityOptions: [String!]
       }
     `,
-    resolvers: createResolvers(weather),
+    resolvers: createResolvers(providers),
   });
 }

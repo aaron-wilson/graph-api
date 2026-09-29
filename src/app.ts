@@ -2,20 +2,18 @@ import { createServer } from "node:http";
 import { createYoga, maskError } from "graphql-yoga";
 import type { parseEnv } from "./config/env.js";
 import { createTripSchema } from "./graphql/schema.js";
-import {
-  deterministicWeather,
-  isPlanTripInputError,
-  type WeatherProvider,
-} from "./graphql/resolvers.js";
+import { isPlanTripInputError } from "./graphql/resolvers.js";
+import { createProviders } from "./providers/index.js";
+import type { PlanningProviders } from "./providers/port.js";
 import { createLogger } from "./lib/utils.js";
 
 export function createApp(
   config: ReturnType<typeof parseEnv>,
-  weather: WeatherProvider = deterministicWeather
+  providers: PlanningProviders = createProviders(config)
 ) {
   const log = createLogger(config.logLevel);
   const yoga = createYoga({
-    schema: createTripSchema(weather),
+    schema: createTripSchema(providers),
     cors: { origin: config.corsOrigin },
     maskedErrors: {
       isDev: false,

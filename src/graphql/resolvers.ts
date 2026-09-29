@@ -1,18 +1,9 @@
 import { z } from "zod";
 import { GraphQLError } from "graphql";
+import { mockProviders } from "../providers/mock.js";
+import type { PlanningProviders } from "../providers/port.js";
 
-export interface WeatherProvider {
-  current(city: string): Promise<string>;
-}
-export const deterministicWeather: WeatherProvider = {
-  async current(city) {
-    const descriptions = ["Clear", "Cloudy", "Mild"];
-    const index =
-      [...city.toLowerCase()].reduce((sum, char) => sum + char.charCodeAt(0), 0) %
-      descriptions.length;
-    return descriptions[index] ?? "Mild";
-  },
-};
+export const deterministicWeather = mockProviders.weather;
 const inputSchema = z.object({
   city: z.string().trim().min(1).max(100),
   preferences: z.array(z.string().trim().min(1).max(100)).max(20),
@@ -27,7 +18,7 @@ export function isPlanTripInputError(error: unknown): boolean {
   }
   return false;
 }
-export function createResolvers(weather: WeatherProvider = deterministicWeather) {
+export function createResolvers(providers: PlanningProviders = mockProviders) {
   return {
     Query: {
       async planTrip(_: unknown, raw: unknown) {
@@ -40,10 +31,21 @@ export function createResolvers(weather: WeatherProvider = deterministicWeather)
           throw error;
         }
         const { city, preferences } = parsed.data;
-        const currentWeather = await weather.current(city);
-        const activityOptions = preferences.map((preference) => `Explore ${preference} in ${city}`);
+        const [currentWeather, places, events] = await Promise.all([
+          providers.weather.current(city),
+          providers.places.find(city),
+          providers.events.find(city),
+        ]);
+        const activityOptions = [
+          ...preferences.map((preference) => `Explore ${preference} in ${city}`),
+          ...places.map((place) => `Visit ${place.name}`),
+          ...events.map((event) => `Attend ${event.name}`),
+        ];
+        const prompt = `Plan three days in ${city}. Preferences: ${preferences.join(", ")}. Weather: ${currentWeather}. Places: ${places.map((place) => place.name).join(", ")}. Events: ${events.map((event) => event.name).join(", ")}.`;
+        let itinerary = "";
+        for await (const chunk of providers.llm.stream(prompt.slice(0, 4000))) itinerary += chunk;
         return {
-          itinerary: `Three days in ${city}: ${activityOptions.join("; ") || "Explore the city"}.`,
+          itinerary,
           currentWeather,
           activityOptions,
         };
