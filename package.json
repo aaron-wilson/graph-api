@@ -12,10 +12,12 @@
     "lint": "eslint .",
     "prepare": "husky",
     "start": "node dist/src/server.js",
-    "test": "vitest run tests",
+    "test": "vitest run --exclude 'tests/stack/**'",
     "test:watch": "vitest tests",
     "typecheck": "tsc --noEmit",
-    "test:integration": "vitest run tests/integration.test.ts"
+    "test:integration": "vitest run tests/stack",
+    "codegen": "graphql-codegen --config codegen.ts",
+    "codegen:check": "graphql-codegen --config codegen.ts --check"
   },
   "keywords": [],
   "author": "",
@@ -24,6 +26,9 @@
   "devDependencies": {
     "@commitlint/config-conventional": "^19.8.1",
     "@eslint/js": "^9.33.0",
+    "@graphql-codegen/cli": "^7.4.3",
+    "@graphql-codegen/typescript": "^6.1.0",
+    "@graphql-codegen/typescript-resolvers": "^6.1.0",
     "@types/node": "^24.3.0",
     "@types/supertest": "^7.2.1",
     "commitlint": "^19.8.1",
@@ -48,6 +53,7 @@
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/sdk-node": "^0.203.0",
     "aws-jwt-verify": "^5.1.0",
+    "dataloader": "^2.2.3",
     "dotenv": "^17.2.2",
     "graphql": "^16.11.0",
     "graphql-yoga": "^5.15.1",

@@ -13,6 +13,7 @@ export default tseslint.config(
       "cdk.out/**",
       "playwright-report/**",
       "test-results/**",
+      "src/graphql/generated.ts",
     ],
   },
   js.configs.recommended,

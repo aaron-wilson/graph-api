@@ -32,6 +32,14 @@ const schema = z.object({
   ANTHROPIC_MODEL: z.string().min(1).optional(),
   ANTHROPIC_BASE_URL: z.string().url().optional(),
   PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(100).max(30000).default(5000),
+  REST_URL: z.string().url().default("http://127.0.0.1:3000"),
+  REST_TIMEOUT_MS: z.coerce.number().int().min(100).max(30000).default(3000),
+  APP_MODE: z.enum(["demo", "live"]).default("demo"),
+  COGNITO_USER_POOL_ID: z.string().min(1).optional(),
+  COGNITO_CLIENT_ID: z.string().min(1).optional(),
+  MAX_QUERY_DEPTH: z.coerce.number().int().min(1).max(20).default(8),
+  MAX_QUERY_COMPLEXITY: z.coerce.number().int().min(1).max(1000).default(100),
+  ALLOW_INTROSPECTION: z.enum(["true", "false"]).default("false"),
 });
 export function parseEnv(input: Record<string, string | undefined>) {
   const result = schema.safeParse(
@@ -55,6 +63,11 @@ export function parseEnv(input: Record<string, string | undefined>) {
     (!result.data.ANTHROPIC_API_KEY || !result.data.ANTHROPIC_MODEL)
   )
     throw new Error("Invalid configuration: ANTHROPIC_API_KEY, ANTHROPIC_MODEL");
+  if (
+    result.data.APP_MODE === "live" &&
+    (!result.data.COGNITO_USER_POOL_ID || !result.data.COGNITO_CLIENT_ID)
+  )
+    throw new Error("Invalid configuration: Cognito settings");
   return Object.freeze({
     port: result.data.PORT,
     logLevel: result.data.LOG_LEVEL,
@@ -74,5 +87,13 @@ export function parseEnv(input: Record<string, string | undefined>) {
     anthropicModel: result.data.ANTHROPIC_MODEL,
     anthropicBaseUrl: result.data.ANTHROPIC_BASE_URL,
     providerTimeoutMs: result.data.PROVIDER_TIMEOUT_MS,
+    restUrl: result.data.REST_URL,
+    restTimeoutMs: result.data.REST_TIMEOUT_MS,
+    appMode: result.data.APP_MODE,
+    cognitoUserPoolId: result.data.COGNITO_USER_POOL_ID,
+    cognitoClientId: result.data.COGNITO_CLIENT_ID,
+    maxQueryDepth: result.data.MAX_QUERY_DEPTH,
+    maxQueryComplexity: result.data.MAX_QUERY_COMPLEXITY,
+    allowIntrospection: result.data.ALLOW_INTROSPECTION === "true",
   });
 }

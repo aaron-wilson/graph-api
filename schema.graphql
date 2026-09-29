@@ -1,0 +1,116 @@
+"""
+Wander trip graph. REST owns trip persistence; this graph plans activities and batches reads.
+"""
+type Query {
+  "An owned trip, or null when it does not exist for the caller."
+  trip(id: ID!): Trip
+  "Owned trips in stable REST cursor order."
+  trips(first: Int! = 20, after: String): TripPage!
+  "A read-only public projection; requires no authentication."
+  sharedTrip(ownerId: ID!, tripId: ID!, token: String!): SharedTrip
+}
+
+type Mutation {
+  "Plans activities with the configured providers and saves the trip."
+  createTrip(input: CreateTripInput!): Trip!
+  "Replans every unpinned activity, optionally with new preferences."
+  refineTrip(input: RefineTripInput!): Trip!
+  pinActivity(input: PinActivityInput!): Trip!
+  "Replaces one unpinned activity with a new titled activity."
+  swapActivity(input: SwapActivityInput!): Trip!
+  "Creates or replaces the public share link."
+  shareTrip(input: ShareTripInput!): Trip!
+}
+
+enum Pace {
+  RELAXED
+  BALANCED
+  BUSY
+}
+
+type Trip {
+  id: ID!
+  ownerId: ID!
+  city: String!
+  preferences: Preferences!
+  days: [Day!]!
+  share: ShareLink
+  createdAt: String!
+  updatedAt: String!
+  "Optimistic concurrency version; pass it back to every mutation."
+  version: Int!
+}
+
+type Preferences {
+  interests: [String!]!
+  pace: Pace!
+}
+
+type Day {
+  id: ID!
+  "Calendar date, YYYY-MM-DD."
+  date: String!
+  activities: [Activity!]!
+}
+
+type Activity {
+  id: ID!
+  title: String!
+  pinned: Boolean!
+}
+
+type ShareLink {
+  token: String!
+  createdAt: String!
+  expiresAt: String!
+}
+
+type TripPage {
+  items: [Trip!]!
+  nextCursor: String
+}
+
+type SharedTrip {
+  id: ID!
+  city: String!
+  days: [Day!]!
+  updatedAt: String!
+}
+
+input PreferencesInput {
+  interests: [String!]!
+  pace: Pace!
+}
+
+input CreateTripInput {
+  city: String!
+  "First day, YYYY-MM-DD."
+  startDate: String!
+  dayCount: Int!
+  preferences: PreferencesInput!
+}
+
+input RefineTripInput {
+  tripId: ID!
+  version: Int!
+  preferences: PreferencesInput
+}
+
+input PinActivityInput {
+  tripId: ID!
+  version: Int!
+  activityId: ID!
+  pinned: Boolean!
+}
+
+input SwapActivityInput {
+  tripId: ID!
+  version: Int!
+  activityId: ID!
+  title: String!
+}
+
+input ShareTripInput {
+  tripId: ID!
+  version: Int!
+}
