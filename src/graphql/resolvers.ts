@@ -16,14 +16,16 @@ export const resolvers: Resolvers = {
     shareTrip: (_, { input }, { trips }) => trips.shareTrip(input),
     startCreateGeneration: (_, { input }, { trips, generations, principal }) => {
       if (!principal) throw new Unauthenticated();
+      const plan = trips.prepareCreate(input);
       return generations.start(principal.id, `${principal.id}:create`, (signal, emit) =>
-        trips.generateCreate(input, emit, signal)
+        trips.generateCreate(plan, emit, signal)
       );
     },
-    startRefineGeneration: (_, { input }, { trips, generations, principal }) => {
+    startRefineGeneration: async (_, { input }, { trips, generations, principal }) => {
       if (!principal) throw new Unauthenticated();
-      return generations.start(principal.id, `${principal.id}:${input.tripId}`, (signal, emit) =>
-        trips.generateRefine(input, emit, signal)
+      const plan = await trips.prepareRefine(input);
+      return generations.start(principal.id, `${principal.id}:${plan.trip.id}`, (signal, emit) =>
+        trips.generateRefine(plan, emit, signal)
       );
     },
     cancelGeneration: (_, { id }, { generations, principal }) => {

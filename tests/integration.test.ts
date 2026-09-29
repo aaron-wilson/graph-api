@@ -6,6 +6,7 @@ import { createApp, type AppDeps } from "../src/app.js";
 import { demoAuth } from "../src/auth/demo.js";
 import { parseEnv } from "../src/config/env.js";
 import { mockProviders } from "../src/providers/mock.js";
+import { createGenerationManager } from "../src/trips/generations.js";
 
 let server: Server | undefined;
 afterEach(async () => {
@@ -192,4 +193,48 @@ it("masks failures in development and logs only safe structured events", async (
     stderr.mockRestore();
     stdout.mockRestore();
   }
+});
+
+it("rejects invalid or missing generation targets before taking a slot", async () => {
+  const generations = createGenerationManager();
+  const emptyBatch: typeof fetch = async () =>
+    new Response(JSON.stringify({ items: [] }), {
+      headers: { "content-type": "application/json" },
+    });
+  const api = await start({}, { generations, restFetch: emptyBatch });
+  const invalid = await request(api)
+    .post("/graphql")
+    .set("Authorization", "Bearer demo")
+    .send({
+      query: `mutation { startCreateGeneration(input: { city: " ", startDate: "2026-10-01",
+        dayCount: 1, preferences: { interests: [], pace: RELAXED } }) { id } }`,
+    });
+  expect(invalid.body.errors[0].extensions.code).toBe("BAD_USER_INPUT");
+  const foreign = await request(api)
+    .post("/graphql")
+    .set("Authorization", "Bearer demo")
+    .send({
+      query: `mutation { startRefineGeneration(input: {
+        tripId: "00000000-0000-4000-8000-000000000009", version: 1 }) { id } }`,
+    });
+  expect(foreign.body.errors[0].extensions.code).toBe("NOT_FOUND");
+  expect(generations.size()).toBe(0);
+});
+
+it("maps a full generation ledger to RATE_LIMITED", async () => {
+  const generations = createGenerationManager();
+  const hold = () => new Promise<never>(() => undefined);
+  for (const target of ["a", "b", "c"]) generations.start("demo", `demo:${target}`, hold);
+  const api = await start({}, { generations });
+  const limited = await request(api)
+    .post("/graphql")
+    .set("Authorization", "Bearer demo")
+    .send({
+      query: `mutation { startCreateGeneration(input: { city: "Rome", startDate: "2026-10-01",
+        dayCount: 1, preferences: { interests: [], pace: RELAXED } }) { id } }`,
+    });
+  expect(limited.body.errors[0]).toMatchObject({
+    message: "Too many active generations",
+    extensions: { code: "RATE_LIMITED" },
+  });
 });

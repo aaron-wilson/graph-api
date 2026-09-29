@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { GenerationLimit } from "../src/trips/errors.js";
 import { createGenerationManager, type GenerationEvent } from "../src/trips/generations.js";
 const saved = { id: "00000000-0000-4000-8000-000000000001" };
 
@@ -56,4 +57,20 @@ it("cancels superseded work and releases subscribers and completed jobs", async 
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("counts only running jobs toward capacity and caps each owner", async () => {
+  const manager = createGenerationManager();
+  for (let index = 0; index < 150; index += 1)
+    manager.start("attacker", "attacker:create", async () => {
+      throw new Error("failed");
+    });
+  await vi.waitFor(() => expect(manager.size()).toBeLessThanOrEqual(100));
+  expect(manager.start("victim", "victim:create", async () => saved).status).toBe("running");
+  const hold = () => new Promise<never>(() => undefined);
+  for (const target of ["a", "b"]) manager.start("busy", `busy:${target}`, hold);
+  manager.start("busy", "busy:c", hold);
+  expect(() => manager.start("busy", "busy:d", hold)).toThrow(GenerationLimit);
+  expect(manager.start("busy", "busy:c", hold).status).toBe("running");
+  expect(manager.start("other", "other:create", hold).status).toBe("running");
 });

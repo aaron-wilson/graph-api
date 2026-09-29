@@ -1,6 +1,6 @@
 import { GraphQLError } from "graphql";
 import { RestError } from "../rest/client.js";
-import { InvalidInput, TripNotFound, Unauthenticated } from "../trips/errors.js";
+import { GenerationLimit, InvalidInput, TripNotFound, Unauthenticated } from "../trips/errors.js";
 
 const REST_ERRORS: Record<number, [message: string, code: string]> = {
   400: ["Invalid input", "BAD_USER_INPUT"],
@@ -15,6 +15,7 @@ function publicShape(error: Error): [message: string, code: string] | null {
   if (error instanceof InvalidInput) return [error.message, "BAD_USER_INPUT"];
   if (error instanceof Unauthenticated) return [error.message, "UNAUTHENTICATED"];
   if (error instanceof TripNotFound) return [error.message, "NOT_FOUND"];
+  if (error instanceof GenerationLimit) return [error.message, "RATE_LIMITED"];
   if (error instanceof RestError) return REST_ERRORS[error.status] ?? null;
   return null;
 }

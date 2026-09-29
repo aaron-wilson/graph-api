@@ -38,6 +38,13 @@ const sharedInput = z.object({
   token: z.string().min(1).max(200),
 });
 
+export type CreatePlan = z.infer<typeof createInput>;
+export interface RefinePlan {
+  trip: Trip;
+  version: number;
+  preferences: CreatePlan["preferences"];
+}
+
 function parse<T extends z.ZodTypeAny>(schema: T, input: unknown): z.infer<T> {
   const result = schema.safeParse(input);
   if (!result.success) throw new InvalidInput("Invalid input");
@@ -115,13 +122,17 @@ export function createTripService({
       const days = planDays(ideas, plan.startDate, plan.dayCount, plan.preferences.pace, newId);
       return remember(await rest.create({ city: plan.city, preferences: plan.preferences, days }));
     },
+    /** Validates a generation request before it takes a ledger slot. */
+    prepareCreate(input: unknown): CreatePlan {
+      const plan = parse(createInput, input);
+      owned();
+      return plan;
+    },
     async generateCreate(
-      input: unknown,
+      plan: CreatePlan,
       emit: (chunk: string) => void,
       generationSignal: AbortSignal
     ) {
-      const plan = parse(createInput, input);
-      owned();
       const ideas = await generatedIdeas(
         plan.city,
         plan.preferences.interests,
@@ -140,18 +151,21 @@ export function createTripService({
       const days = refineDays(trip.days, ideas, next.pace, newId);
       return remember(await rest.update(trip.id, change.version, { preferences: next, days }));
     },
+    /** Validates a refinement and loads the caller's trip before it takes a ledger slot. */
+    async prepareRefine(input: unknown): Promise<RefinePlan> {
+      const change = parse(refineInput, input);
+      const trip = await existing(change.tripId);
+      return { trip, version: change.version, preferences: change.preferences ?? trip.preferences };
+    },
     async generateRefine(
-      input: unknown,
+      { trip, version, preferences: next }: RefinePlan,
       emit: (chunk: string) => void,
       generationSignal: AbortSignal
     ) {
-      const change = parse(refineInput, input);
-      const trip = await existing(change.tripId);
-      const next = change.preferences ?? trip.preferences;
       const ideas = await generatedIdeas(trip.city, next.interests, emit, generationSignal);
       if (generationSignal.aborted) throw new Error("Generation cancelled");
       const days = refineDays(trip.days, ideas, next.pace, newId);
-      return remember(await rest.update(trip.id, change.version, { preferences: next, days }));
+      return remember(await rest.update(trip.id, version, { preferences: next, days }));
     },
     async pinActivity(input: unknown) {
       const pin = parse(pinInput, input);

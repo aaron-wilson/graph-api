@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Trip } from "../rest/client.js";
+import { GenerationLimit } from "./errors.js";
 
 export type GenerationStatus = "running" | "completed" | "failed" | "cancelled" | "interrupted";
 export interface GenerationEvent {
@@ -23,7 +24,9 @@ interface Job {
 }
 const HISTORY_MS = 5 * 60_000;
 const MAX_EVENTS = 100;
-const MAX_JOBS = 100;
+const MAX_RUNNING = 100;
+const MAX_RUNNING_PER_OWNER = 3;
+const MAX_RETAINED = 100;
 
 function ownerFromId(id: string) {
   const [encoded, uuid] = id.split(":");
@@ -77,6 +80,9 @@ export function createGenerationManager() {
     );
     if (active.get(job.target) === job.id) active.delete(job.target);
     job.listeners.clear();
+    const retained = [...jobs.values()].filter((item) => item.status !== "running");
+    for (const old of retained.slice(0, Math.max(0, retained.length - MAX_RETAINED)))
+      jobs.delete(old.id);
     setTimeout(() => jobs.delete(job.id), HISTORY_MS).unref();
   };
   const lookup = (id: string, ownerId: string) => {
@@ -99,7 +105,12 @@ export function createGenerationManager() {
           finish(job, "cancelled");
         }
       }
-      if (jobs.size >= MAX_JOBS) throw new Error("Generation capacity reached");
+      const running = [...jobs.values()].filter((item) => item.status === "running");
+      if (
+        running.length >= MAX_RUNNING ||
+        running.filter((item) => item.ownerId === ownerId).length >= MAX_RUNNING_PER_OWNER
+      )
+        throw new GenerationLimit();
       const job: Job = {
         id: `${Buffer.from(ownerId).toString("base64url")}:${randomUUID()}`,
         ownerId,

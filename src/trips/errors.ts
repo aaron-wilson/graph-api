@@ -11,3 +11,9 @@ export class TripNotFound extends Error {
     super("Trip not found");
   }
 }
+/** The caller or the process already runs the maximum number of generations. */
+export class GenerationLimit extends Error {
+  constructor() {
+    super("Too many active generations");
+  }
+}

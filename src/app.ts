@@ -11,12 +11,13 @@ import { tripSchema } from "./graphql/schema.js";
 import { createProviders } from "./providers/index.js";
 import type { PlanningProviders } from "./providers/port.js";
 import { createLogger } from "./lib/utils.js";
-import { createGenerationManager } from "./trips/generations.js";
+import { createGenerationManager, type GenerationManager } from "./trips/generations.js";
 
 export interface AppDeps {
   providers: PlanningProviders;
   auth: AuthPort;
   restFetch: typeof fetch;
+  generations: GenerationManager;
 }
 
 export function createApp(config: ReturnType<typeof parseEnv>, deps: Partial<AppDeps> = {}) {
@@ -24,7 +25,7 @@ export function createApp(config: ReturnType<typeof parseEnv>, deps: Partial<App
   if (config.appMode === "live" && auth === demoAuth)
     throw new Error("Demo auth is unavailable in live mode");
   const log = createLogger(config.logLevel);
-  const generations = createGenerationManager();
+  const generations = deps.generations ?? createGenerationManager();
   const yoga = createYoga({
     schema: tripSchema,
     context: createContextFactory({
