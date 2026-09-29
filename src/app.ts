@@ -1,8 +1,12 @@
 import { createServer } from "node:http";
-import { createYoga } from "graphql-yoga";
+import { createYoga, maskError } from "graphql-yoga";
 import type { parseEnv } from "./config/env.js";
 import { createTripSchema } from "./graphql/schema.js";
-import { deterministicWeather, type WeatherProvider } from "./graphql/resolvers.js";
+import {
+  deterministicWeather,
+  isPlanTripInputError,
+  type WeatherProvider,
+} from "./graphql/resolvers.js";
 import { createLogger } from "./lib/utils.js";
 
 export function createApp(
@@ -13,6 +17,19 @@ export function createApp(
   const yoga = createYoga({
     schema: createTripSchema(weather),
     cors: { origin: config.corsOrigin },
+    maskedErrors: {
+      isDev: false,
+      maskError: (error, message, isDev) => {
+        if (error instanceof Error && isPlanTripInputError(error)) return error;
+        return maskError(error, message, isDev);
+      },
+    },
+    logging: {
+      debug: () => log("debug", "graphql_debug"),
+      info: () => log("info", "graphql_info"),
+      warn: () => log("warn", "graphql_warning"),
+      error: () => log("error", "graphql_error", { classification: "internal" }),
+    },
   });
   return createServer((request, response) => {
     if (request.url === "/health") {
