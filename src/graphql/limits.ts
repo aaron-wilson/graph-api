@@ -22,10 +22,15 @@ function tooComplex(message: string) {
 
 function pageSize(node: FieldNode, field: GraphQLField<unknown, unknown> | undefined) {
   const argument = node.arguments?.find((arg) => arg.name.value === "first");
-  if (argument?.value.kind === Kind.INT) return Number(argument.value.value);
+  if (argument?.value.kind === Kind.INT) {
+    const value = Number(argument.value.value);
+    return Number.isInteger(value) && value >= 1 && value <= MAX_PAGE ? value : MAX_PAGE;
+  }
   if (argument) return MAX_PAGE;
   const fallback = field?.args.find((arg) => arg.name === "first")?.defaultValue;
-  return typeof fallback === "number" ? fallback : 1;
+  return typeof fallback === "number" && Number.isFinite(fallback) && fallback >= 1
+    ? Math.min(fallback, MAX_PAGE)
+    : 1;
 }
 
 /**
@@ -36,7 +41,10 @@ function measure(
   context: ValidationContext,
   selectionSet: SelectionSetNode,
   parent: GraphQLNamedType | undefined,
-  fragments: ReadonlySet<string>
+  fragments: ReadonlySet<string>,
+  maxDepth: number,
+  maxCost: number,
+  work: { remaining: number }
 ): { depth: number; cost: number } {
   let depth = 0;
   let cost = 0;
@@ -45,13 +53,23 @@ function measure(
     cost += result.cost * factor;
   };
   for (const selection of selectionSet.selections) {
+    if (--work.remaining < 0) return { depth: maxDepth + 1, cost: maxCost + 1 };
     if (selection.kind === Kind.FIELD) {
       const field = isObjectType(parent) ? parent.getFields()[selection.name.value] : undefined;
       cost += 1;
       const child = selection.selectionSet
-        ? measure(context, selection.selectionSet, field && getNamedType(field.type), fragments)
+        ? measure(
+            context,
+            selection.selectionSet,
+            field && getNamedType(field.type),
+            fragments,
+            maxDepth,
+            maxCost,
+            work
+          )
         : { depth: 0, cost: 0 };
       add(child, 1, pageSize(selection, field));
+      if (cost > maxCost || depth > maxDepth) break;
       continue;
     }
     const fragment =
@@ -70,7 +88,20 @@ function measure(
       selection.kind === Kind.FRAGMENT_SPREAD
         ? new Set([...fragments, selection.name.value])
         : fragments;
-    add(measure(context, fragment.selectionSet, condition ?? undefined, seen), 0, 1);
+    add(
+      measure(
+        context,
+        fragment.selectionSet,
+        condition ?? undefined,
+        seen,
+        maxDepth,
+        maxCost,
+        work
+      ),
+      0,
+      1
+    );
+    if (cost > maxCost || depth > maxDepth) break;
   }
   return { depth, cost };
 }
@@ -79,7 +110,15 @@ export function queryLimitRule(maxDepth: number, maxCost: number): ValidationRul
   return (context) => ({
     OperationDefinition(operation) {
       const root = context.getSchema().getRootType(operation.operation) ?? undefined;
-      const { depth, cost } = measure(context, operation.selectionSet, root, new Set());
+      const { depth, cost } = measure(
+        context,
+        operation.selectionSet,
+        root,
+        new Set(),
+        maxDepth,
+        maxCost,
+        { remaining: 1000 }
+      );
       if (depth > maxDepth) context.reportError(tooComplex(`Query depth exceeds ${maxDepth}`));
       if (cost > maxCost) context.reportError(tooComplex(`Query cost exceeds ${maxCost}`));
     },

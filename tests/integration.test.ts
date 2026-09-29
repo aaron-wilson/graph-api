@@ -59,6 +59,25 @@ it("enforces depth and cost limits before execution", async () => {
     .set("Authorization", "Bearer demo")
     .send({ query: "{ trips(first: 100) { items { id city } } }" });
   expect(costly.body.errors[0].message).toBe("Query cost exceeds 100");
+  const padded = await request(api)
+    .post("/graphql")
+    .set("Authorization", "Bearer demo")
+    .send({
+      query: `{ bad: trips(first: -1000) { nextCursor } ${Array.from({ length: 101 }, (_, i) => `f${i}: __typename`).join(" ")} }`,
+    });
+  expect(padded.body.errors[0].message).toBe("Query cost exceeds 100");
+  const dag =
+    "{ ...F0 } " +
+    Array.from(
+      { length: 20 },
+      (_, i) => `fragment F${i} on Query { ...F${i + 1} ...F${i + 1} }`
+    ).join(" ") +
+    " fragment F20 on Query { __typename }";
+  const repeated = await request(api)
+    .post("/graphql")
+    .set("Authorization", "Bearer demo")
+    .send({ query: dag });
+  expect(repeated.body.errors[0].message).toBe("Query cost exceeds 100");
   expect(restFetch).not.toHaveBeenCalled();
 });
 

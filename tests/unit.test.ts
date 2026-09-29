@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { buildSchema, parse, validate } from "graphql";
 import { readFileSync } from "node:fs";
 import { createCognitoAuth } from "../src/auth/cognito.js";
@@ -103,6 +103,35 @@ it("bounds query depth and fragment-expanded cost", () => {
   expect(
     errors("fragment F on Trip { id city version } { trips(first: 30) { items { ...F } } }")
   ).toEqual(["Query cost exceeds 100"]);
+});
+
+it("bounds repeated fragments and never subtracts invalid page sizes", () => {
+  const schema = buildSchema(readFileSync("schema.graphql", "utf8"));
+  const queryType = schema.getQueryType();
+  if (!queryType) throw new Error("Missing query type");
+  const fieldReads = vi.spyOn(queryType, "getFields");
+  const errors = (query: string) =>
+    validate(schema, parse(query), [queryLimitRule(8, 100)]).map((error) => error.message);
+  const dag =
+    "{ ...F0 } " +
+    Array.from(
+      { length: 20 },
+      (_, i) => `fragment F${i} on Query { ...F${i + 1} ...F${i + 1} }`
+    ).join(" ") +
+    " fragment F20 on Query { __typename }";
+  expect(errors(dag)).toContain("Query cost exceeds 100");
+  expect(fieldReads.mock.calls.length).toBeLessThan(1000);
+  fieldReads.mockRestore();
+  const siblings = Array.from({ length: 101 }, (_, i) => `f${i}: __typename`).join(" ");
+  for (const first of ["-1000", "0", "101"])
+    expect(errors(`{ bad: trips(first: ${first}) { nextCursor } ${siblings} }`)).toContain(
+      "Query cost exceeds 100"
+    );
+  expect(
+    errors(`query($n: Int = -1000) { bad: trips(first: $n) { nextCursor } ${siblings} }`)
+  ).toContain("Query cost exceeds 100");
+  expect(errors("{ ...Cycle } fragment Cycle on Query { ...Cycle __typename }")).toEqual([]);
+  expect(errors("{ trips { items { days { activities { id } } } } }")).toEqual([]);
 });
 
 it("coalesces loads into one REST batch and drops trips owned by someone else", async () => {
