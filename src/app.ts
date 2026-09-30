@@ -12,7 +12,7 @@ import { createProviders } from "./providers/index.js";
 import type { PlanningProviders } from "./providers/port.js";
 import { createLogger } from "./lib/utils.js";
 import { createGenerationManager, type GenerationManager } from "./trips/generations.js";
-import { context, trace } from "@opentelemetry/api";
+import { context, trace, SpanStatusCode } from "@opentelemetry/api";
 import { incomingContext, recordFailure } from "./otel/operations.js";
 
 export interface AppDeps {
@@ -58,6 +58,7 @@ export function createApp(config: ReturnType<typeof parseEnv>, deps: Partial<App
       // Yoga reports every remapped error here; client errors are expected and not logged.
       error: (error: unknown) => {
         if (!toPublicError(error)) {
+          trace.getActiveSpan()?.setStatus({ code: SpanStatusCode.ERROR });
           recordFailure("graphql");
           log("error", "graphql_error", { classification: "internal" });
         }
@@ -70,7 +71,13 @@ export function createApp(config: ReturnType<typeof parseEnv>, deps: Partial<App
     );
     return context.with(spanContext, () =>
       trace.getTracer("wander-graph").startActiveSpan("http.graph", (span) => {
-        response.once("finish", () => span.end());
+        const end = () => {
+          response.removeListener("finish", end);
+          response.removeListener("close", end);
+          span.end();
+        };
+        response.once("finish", end);
+        response.once("close", end);
         if (request.url === "/health") {
           response.writeHead(200, { "content-type": "application/json" });
           response.end(JSON.stringify({ status: "healthy" }));
@@ -155,6 +162,7 @@ export function createApp(config: ReturnType<typeof parseEnv>, deps: Partial<App
           return;
         }
         Promise.resolve(yoga(request, response)).catch((error: unknown) => {
+          span.setStatus({ code: SpanStatusCode.ERROR });
           recordFailure("http.graph");
           log("error", "request_error", { name: error instanceof Error ? error.name : "Unknown" });
           if (!response.headersSent)
