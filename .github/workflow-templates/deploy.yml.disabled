@@ -96,10 +96,10 @@ jobs:
         run: pnpm --dir react-ui install --frozen-lockfile
       - name: Verify and review the plan before acquiring cloud credentials
         run: |
-          node graph-rest-react-stack/scripts/verify-repo.mjs hub
-          node graph-rest-react-stack/scripts/verify-repo.mjs rest-api
-          node graph-rest-react-stack/scripts/verify-repo.mjs graph-api
-          node graph-rest-react-stack/scripts/verify-repo.mjs react-ui
+          node graph-rest-react-stack/scripts/verify-repo.mjs hub --acceptance
+          node graph-rest-react-stack/scripts/verify-repo.mjs rest-api --acceptance
+          node graph-rest-react-stack/scripts/verify-repo.mjs graph-api --acceptance
+          node graph-rest-react-stack/scripts/verify-repo.mjs react-ui --acceptance
           bash graph-rest-react-stack/scripts/deploy-all.sh "$PLATFORM_ENV" --dry-run
       - uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
