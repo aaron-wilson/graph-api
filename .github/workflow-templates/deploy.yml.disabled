@@ -1,0 +1,110 @@
+name: Explicit full-stack deployment (disabled template)
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Protected GitHub environment with reviewed non-secret variables
+        required: true
+        type: environment
+      revision:
+        description: Full source SHA for this repo; companion SHAs come from environment variables
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+env:
+  HUB_REPO: ${{ vars.HUB_REPOSITORY }}
+  HUB_REF: ${{ vars.HUB_REVISION }}
+  REST_REPO: ${{ vars.REST_REPOSITORY }}
+  REST_REF: ${{ vars.REST_REVISION }}
+  GRAPH_REPO: ${{ github.repository }}
+  GRAPH_REF: ${{ inputs.revision }}
+  UI_REPO: ${{ vars.UI_REPOSITORY }}
+  UI_REF: ${{ vars.UI_REVISION }}
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PLATFORM_ACCOUNT: ${{ vars.PLATFORM_ACCOUNT }}
+      PLATFORM_REGION: ${{ vars.PLATFORM_REGION }}
+      PLATFORM_ENV: ${{ inputs.environment }}
+      PLATFORM_AVAILABILITY_ZONES: ${{ vars.PLATFORM_AVAILABILITY_ZONES }}
+      PLATFORM_SITE_ORIGIN: ${{ vars.PLATFORM_SITE_ORIGIN }}
+      PLATFORM_CERTIFICATE_ARN: ${{ vars.PLATFORM_CERTIFICATE_ARN }}
+      PLATFORM_DEPLOY_PRINCIPAL_ARN: ${{ vars.PLATFORM_DEPLOY_PRINCIPAL_ARN }}
+      PLATFORM_COGNITO_DOMAIN_PREFIX: ${{ vars.PLATFORM_COGNITO_DOMAIN_PREFIX }}
+      UI_CERTIFICATE_ARN: ${{ vars.UI_CERTIFICATE_ARN }}
+      DEPLOY_GRAPH_ORIGIN: ${{ vars.DEPLOY_GRAPH_ORIGIN }}
+      API_LLM_PROVIDER: ${{ vars.API_LLM_PROVIDER || 'mock' }}
+      API_LLM_MODEL: ${{ vars.API_LLM_MODEL }}
+      API_EVENTS_PROVIDER: ${{ vars.API_EVENTS_PROVIDER || 'mock' }}
+    steps:
+      - name: Require explicit repository names and full revisions
+        run: |
+          node -e 'for (const k of ["HUB", "REST", "GRAPH", "UI"]) { if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(process.env[k+"_REPO"] || "") || !/^[a-f0-9]{40}$/.test(process.env[k+"_REF"] || "")) throw new Error("Invalid " + k + " checkout inputs"); }'
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ env.HUB_REPO }}
+          ref: ${{ env.HUB_REF }}
+          path: graph-rest-react-stack
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ env.REST_REPO }}
+          ref: ${{ env.REST_REF }}
+          path: rest-api
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ env.GRAPH_REPO }}
+          ref: ${{ env.GRAPH_REF }}
+          path: graph-api
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ env.UI_REPO }}
+          ref: ${{ env.UI_REF }}
+          path: react-ui
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.21"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.15.0"
+      - name: Install pinned hub and graph dependencies
+        run: |
+          pnpm --dir graph-rest-react-stack/platform-cdk install --frozen-lockfile
+          pnpm --dir graph-api install --frozen-lockfile
+          (cd rest-api && bun install --frozen-lockfile)
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "11.18.0"
+      - name: Install pinned UI dependencies
+        run: pnpm --dir react-ui install --frozen-lockfile
+      - name: Verify and review the plan before acquiring cloud credentials
+        run: |
+          node graph-rest-react-stack/scripts/verify-repo.mjs hub
+          node graph-rest-react-stack/scripts/verify-repo.mjs rest-api
+          node graph-rest-react-stack/scripts/verify-repo.mjs graph-api
+          node graph-rest-react-stack/scripts/verify-repo.mjs react-ui
+          bash graph-rest-react-stack/scripts/deploy-all.sh "$PLATFORM_ENV" --dry-run
+      - uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.PLATFORM_REGION }}
+          role-session-name: wander-manual-deploy
+      - name: Execute the reviewed deployment
+        run: bash graph-rest-react-stack/scripts/deploy-all.sh "$PLATFORM_ENV" --execute

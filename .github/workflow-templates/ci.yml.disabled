@@ -1,0 +1,73 @@
+name: Offline checks (disabled template)
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+env:
+  HUB_REPO: ${{ vars.HUB_REPOSITORY }}
+  HUB_REF: ${{ vars.HUB_REVISION }}
+  REST_REPO: ${{ vars.REST_REPOSITORY }}
+  REST_REF: ${{ vars.REST_REVISION }}
+  GRAPH_REPO: ${{ github.repository }}
+  GRAPH_REF: ${{ github.sha }}
+  UI_REPO: ${{ vars.UI_REPOSITORY }}
+  UI_REF: ${{ vars.UI_REVISION }}
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Require explicit repository names and full revisions
+        run: |
+          node -e 'for (const k of ["HUB", "REST", "GRAPH", "UI"]) { if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(process.env[k+"_REPO"] || "") || !/^[a-f0-9]{40}$/.test(process.env[k+"_REF"] || "")) throw new Error("Invalid " + k + " checkout inputs"); }'
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ env.HUB_REPO }}
+          ref: ${{ env.HUB_REF }}
+          path: graph-rest-react-stack
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ env.REST_REPO }}
+          ref: ${{ env.REST_REF }}
+          path: rest-api
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ env.GRAPH_REPO }}
+          ref: ${{ env.GRAPH_REF }}
+          path: graph-api
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ env.UI_REPO }}
+          ref: ${{ env.UI_REF }}
+          path: react-ui
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.21"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.15.0"
+      - name: Install pinned hub and graph dependencies
+        run: |
+          pnpm --dir graph-rest-react-stack/platform-cdk install --frozen-lockfile
+          pnpm --dir graph-api install --frozen-lockfile
+          (cd rest-api && bun install --frozen-lockfile)
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "11.18.0"
+      - name: Install pinned UI dependencies
+        run: pnpm --dir react-ui install --frozen-lockfile
+      - name: Run the implemented local checks
+        run: node graph-rest-react-stack/scripts/verify-repo.mjs graph-api
+      - name: Check inactive workflow syntax and environment examples
+        run: |
+          node graph-rest-react-stack/scripts/check-workflows.mjs
+          node graph-rest-react-stack/scripts/check-env.mjs
+      - name: Build the local application image
+        run: docker build -t wander/graph:check graph-api
