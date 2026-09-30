@@ -13,7 +13,7 @@ import type { PlanningProviders } from "./providers/port.js";
 import { createLogger } from "./lib/utils.js";
 import { createGenerationManager, type GenerationManager } from "./trips/generations.js";
 import { context, trace } from "@opentelemetry/api";
-import { incomingContext } from "./otel/operations.js";
+import { incomingContext, recordFailure } from "./otel/operations.js";
 
 export interface AppDeps {
   providers: PlanningProviders;
@@ -57,7 +57,10 @@ export function createApp(config: ReturnType<typeof parseEnv>, deps: Partial<App
       warn: () => log("warn", "graphql_warning"),
       // Yoga reports every remapped error here; client errors are expected and not logged.
       error: (error: unknown) => {
-        if (!toPublicError(error)) log("error", "graphql_error", { classification: "internal" });
+        if (!toPublicError(error)) {
+          recordFailure("graphql");
+          log("error", "graphql_error", { classification: "internal" });
+        }
       },
     },
   });
@@ -152,6 +155,7 @@ export function createApp(config: ReturnType<typeof parseEnv>, deps: Partial<App
           return;
         }
         Promise.resolve(yoga(request, response)).catch((error: unknown) => {
+          recordFailure("http.graph");
           log("error", "request_error", { name: error instanceof Error ? error.name : "Unknown" });
           if (!response.headersSent)
             response.writeHead(500, { "content-type": "application/json" });

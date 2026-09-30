@@ -6,6 +6,7 @@ import type { RestClient, Trip } from "../rest/client.js";
 import { InvalidInput, TripNotFound, Unauthenticated } from "./errors.js";
 import { createTripLoader, type TripLoader } from "./loader.js";
 import { gatherIdeas, planDays, refineDays } from "./planner.js";
+import { observed } from "../otel/operations.js";
 
 const id = z.string().uuid();
 const version = z.number().int().positive();
@@ -92,13 +93,15 @@ export function createTripService({
   ) {
     const ideas = await gatherIdeas(providers, city, interests, generationSignal);
     const chunks: string[] = [];
-    for await (const chunk of providers.llm.stream(
-      `Plan activities in ${city} for ${interests.join(", ")}`,
-      generationSignal
-    )) {
-      chunks.push(chunk);
-      emit(chunk);
-    }
+    await observed("provider.llm", async () => {
+      for await (const chunk of providers.llm.stream(
+        `Plan activities in ${city} for ${interests.join(", ")}`,
+        generationSignal
+      )) {
+        chunks.push(chunk);
+        emit(chunk);
+      }
+    });
     const title = chunks.join("").trim().slice(0, 120);
     return title ? [title, ...ideas] : ideas;
   }

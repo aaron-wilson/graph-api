@@ -17,18 +17,20 @@ export async function gatherIdeas(
   interests: readonly string[],
   signal?: AbortSignal
 ): Promise<string[]> {
-  const [weather, places, events] = await Promise.all([
-    observed("provider.weather", () => providers.weather.current(city, signal)),
-    observed("provider.places", () => providers.places.find(city, signal)),
-    observed("provider.events", () => providers.events.find(city, signal)),
-  ]);
-  const ideas = [
-    ...interests.map((interest) => `Explore ${interest} in ${city}`),
-    ...places.map((place) => `Visit ${place.name}`),
-    ...events.map((event) => `Attend ${event.name} (${event.date})`),
-    `Walk around ${city} (${weather})`,
-  ].map((idea) => idea.slice(0, MAX_TITLE));
-  return [...new Set(ideas)];
+  return observed("planner.gather", async () => {
+    const [weather, places, events] = await Promise.all([
+      observed("provider.weather", () => providers.weather.current(city, signal)),
+      observed("provider.places", () => providers.places.find(city, signal)),
+      observed("provider.events", () => providers.events.find(city, signal)),
+    ]);
+    const ideas = [
+      ...interests.map((interest) => `Explore ${interest} in ${city}`),
+      ...places.map((place) => `Visit ${place.name}`),
+      ...events.map((event) => `Attend ${event.name} (${event.date})`),
+      `Walk around ${city} (${weather})`,
+    ].map((idea) => idea.slice(0, MAX_TITLE));
+    return [...new Set(ideas)];
+  });
 }
 
 /** Picks up to `count` ideas starting at a rotating offset, skipping titles the day already has. */

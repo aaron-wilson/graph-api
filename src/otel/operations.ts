@@ -3,6 +3,10 @@ import { context, metrics, propagation, trace, SpanStatusCode } from "@opentelem
 const tracer = trace.getTracer("wander-graph");
 const meter = metrics.getMeter("wander-graph");
 const duration = meter.createHistogram("wander.operation.duration", { unit: "ms" });
+const errors = meter.createCounter("wander.operation.errors");
+export function recordFailure(operation: string) {
+  errors.add(1, { operation });
+}
 
 export async function observed<T>(name: string, operation: () => Promise<T>): Promise<T> {
   return tracer.startActiveSpan(name, async (span) => {
@@ -11,6 +15,7 @@ export async function observed<T>(name: string, operation: () => Promise<T>): Pr
       return await operation();
     } catch (error) {
       span.setStatus({ code: SpanStatusCode.ERROR });
+      errors.add(1, { operation: name });
       throw error;
     } finally {
       duration.record(performance.now() - start, { operation: name });
