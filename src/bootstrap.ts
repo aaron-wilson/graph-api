@@ -4,9 +4,11 @@ import { startTelemetry } from "./otel/init.js";
 
 const config = parseEnv(process.env);
 const sdk = startTelemetry(config);
-await import("./server.js");
+const { startServer } = await import("./server.js");
+startServer(config);
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
-    void sdk?.shutdown().finally(() => process.exit(0));
+    if (!sdk) process.exit(0);
+    else void sdk.shutdown().finally(() => process.exit(0));
   });
 }

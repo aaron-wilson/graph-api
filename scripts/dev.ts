@@ -1,1 +1,1 @@
-import "../src/server.js";
+import "../src/bootstrap.js";

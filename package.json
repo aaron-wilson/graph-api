@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "GraphQL Yoga aggregation and orchestration layer",
   "type": "module",
-  "main": "dist/src/server.js",
+  "main": "dist/src/bootstrap.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/bootstrap.ts",
