@@ -16,6 +16,24 @@ function template(extra: Record<string, string> = {}) {
   );
 }
 describe("graph Fargate contract", () => {
+  it("accepts blank mock models and requires a model for selected LLMs", () => {
+    for (const model of [undefined, "", "   "]) {
+      expect(
+        parseConfig({ ...fixture, API_LLM_PROVIDER: "mock", API_LLM_MODEL: model }).API_LLM_MODEL
+      ).toBeUndefined();
+      for (const provider of ["openai", "anthropic"]) {
+        expect(() =>
+          parseConfig({ ...fixture, API_LLM_PROVIDER: provider, API_LLM_MODEL: model })
+        ).toThrow("API_LLM_MODEL");
+      }
+    }
+    for (const provider of ["openai", "anthropic"]) {
+      expect(
+        parseConfig({ ...fixture, API_LLM_PROVIDER: provider, API_LLM_MODEL: "example-model" })
+          .API_LLM_MODEL
+      ).toBe("example-model");
+    }
+  });
   it("requires bounded live inputs and immutable image revisions", () => {
     expect(() => parseConfig({ ...fixture, API_IMAGE_TAG: "latest" })).toThrow("API_IMAGE_TAG");
     expect(() =>

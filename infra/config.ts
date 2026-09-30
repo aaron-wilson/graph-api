@@ -7,7 +7,10 @@ const schema = z.object({
   PLATFORM_SITE_ORIGIN: z.string().url(),
   API_IMAGE_TAG: z.string().regex(/^[a-f0-9]{40}$/),
   API_LLM_PROVIDER: z.enum(["mock", "openai", "anthropic"]).default("mock"),
-  API_LLM_MODEL: z.string().min(1).optional(),
+  API_LLM_MODEL: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(1).optional()
+  ),
   API_EVENTS_PROVIDER: z.enum(["mock", "ticketmaster"]).default("mock"),
 });
 export function parseConfig(input: Record<string, string | undefined>) {
