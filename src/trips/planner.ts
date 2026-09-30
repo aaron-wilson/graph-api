@@ -1,5 +1,6 @@
 import type { PlanningProviders } from "../providers/port.js";
 import type { Activity, Day, Preferences } from "../rest/client.js";
+import { observed } from "../otel/operations.js";
 
 const DAY_MS = 86_400_000;
 const MAX_TITLE = 120;
@@ -17,9 +18,9 @@ export async function gatherIdeas(
   signal?: AbortSignal
 ): Promise<string[]> {
   const [weather, places, events] = await Promise.all([
-    providers.weather.current(city, signal),
-    providers.places.find(city, signal),
-    providers.events.find(city, signal),
+    observed("provider.weather", () => providers.weather.current(city, signal)),
+    observed("provider.places", () => providers.places.find(city, signal)),
+    observed("provider.events", () => providers.events.find(city, signal)),
   ]);
   const ideas = [
     ...interests.map((interest) => `Explore ${interest} in ${city}`),

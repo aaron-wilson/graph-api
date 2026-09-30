@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { injectContext } from "../otel/operations.js";
 
 const MAX_RESPONSE_BYTES = 1_000_000;
 const PUBLIC_STATUSES = new Set([400, 401, 403, 404, 409, 429]);
@@ -110,6 +111,7 @@ export function createRestClient(
       headers.Authorization = authorization;
     }
     if (init.body !== undefined) headers["Content-Type"] = "application/json";
+    injectContext(headers);
     let response: Response;
     try {
       response = await transport(new URL(path, baseUrl), {
