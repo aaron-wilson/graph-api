@@ -15,7 +15,8 @@ describe("telemetry boundary", () => {
   it("drops unapproved log fields", () => {
     const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     createLogger("info")("error", "request_error", { name: "Error", token: "private" });
-    expect(write).toHaveBeenCalledWith(expect.not.stringContaining("private"));
+    createLogger("info")("error", "request_error", { name: "token=private" });
+    expect(write.mock.calls.join(" ")).not.toContain("private");
     write.mockRestore();
   });
 });
