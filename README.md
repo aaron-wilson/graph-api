@@ -1,35 +1,108 @@
-# Wander GraphQL API
+# graph-api
 
-GraphQL Yoga runs the Node/TypeScript aggregation and planning layer. The SDL and generated resolver types describe REST-backed trip views, mutations and generation subscriptions. Request-local DataLoader batches upstream domain reads. Zod validates provider and REST responses; Yoga/Envelop hooks enforce authentication, depth/cost limits and safe error handling.
+> TypeScript-first GraphQL orchestration with Yoga, typed REST access, streaming, and Cognito.
 
-## Local use
+---
 
-Use the Node 24 runtime baseline and pnpm 10.15.0 lockfile. Dependency setup is explicit: `pnpm install --frozen-lockfile`. Start the sibling REST demo on port 3000 first, then, with installed dependencies:
+## Table of Contents
+
+- [Overview](#overview)
+- [Tech Stack](#tech-stack)
+- [Getting Started](#getting-started)
+- [Configuration](#configuration)
+- [Database](#database)
+- [Authentication & Security](#authentication--security)
+- [Testing](#testing)
+- [CI/CD](#cicd)
+- [Observability](#observability)
+- [License](#license)
+
+---
+
+## Overview
+
+The GraphQL layer shapes REST data for the UI and orchestrates planning providers. It demonstrates generated types, request-local batching, validated integrations, and authenticated streaming.
+
+- GraphQL queries/mutations plus generation subscriptions and SSE replay
+- Mock or real weather, places, events, and LLM adapters
+- Cognito access-token verification and depth/cost limits
+
+---
+
+## Tech Stack
+
+| Layer              | Technology                                         | Role                                                 |
+| ------------------ | -------------------------------------------------- | ---------------------------------------------------- |
+| Language / runtime | TypeScript 5.9.2 · Node 24                         | Strict ESM service; Node 24 container baseline       |
+| Package management | pnpm 10.15.0                                       | Locked independent install                           |
+| API                | GraphQL 16.11.0 · Yoga 5.15.1 / Envelop            | Typed schema, HTTP and subscriptions                 |
+| Data access        | DataLoader 2.2.3 · Zod 3.25.76                     | Request-scoped REST batching and response validation |
+| Authentication     | Cognito · aws-jwt-verify 5.1.0                     | Verify live access tokens                            |
+| Providers          | OpenAI 5.20 · Anthropic SDK 0.61 · validated fetch | LLM streaming, wttr, Overpass, Ticketmaster          |
+| Testing            | Vitest 5.0.2 · Supertest 7.3                       | Unit and real REST/graph integration                 |
+| Deployment         | Docker · CDK · ECS Fargate · ALB                   | Private tasks behind HTTPS routing                   |
+| Observability      | OpenTelemetry API 1.9 / SDK 0.203                  | Traces, metrics and correlated logs                  |
+
+---
+
+## Getting Started
+
+Use Node 24 and pnpm 10.15.0. Start the sibling REST service first.
 
 ```sh
-DOTENV_CONFIG_PATH=/dev/null pnpm dev
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
-Defaults are `http://localhost:4000/graphql`, `REST_URL=http://localhost:3000`, demo identity and deterministic mock weather/places/events/LLM adapters. Private GraphQL and SSE requests use `Authorization: Bearer demo`. All vendor selectors and selected-only credentials/models are documented in `.env.example`; no vendor key is required by defaults. Real OpenAI, Anthropic, wttr, Overpass and Ticketmaster adapters normalize their boundaries, but their live calls are unverified.
+GraphQL: http://localhost:4000/graphql. Health: `/health`. Private requests use `Authorization: Bearer demo` in default demo mode. GraphiQL/introspection are disabled unless `ALLOW_INTROSPECTION=true`. For a full container alternative, use [hub Compose](https://github.com/aaron-wilson/graph-rest-react-stack); do not run both stacks on the same ports.
 
-Generation commands return an ID before streaming. The UI reads authenticated `/generations/<id>/events`; GraphQL also exposes a subscription. Replay and monotonically increasing event IDs support reconnect within one process. Jobs, replay buffers and provider caches are process-local: restart loses in-progress generations. Cancellation, provider deadlines and late subscriptions are tested. Cloud infrastructure keeps a single graph task and uses a stop-before-start rollout; horizontal or restart-safe streaming would require shared coordination.
+---
 
-`APP_MODE=live` verifies Cognito access tokens and forwards identity to REST. Both APIs must agree on the pool/client. Live startup never falls back to demo auth. Public share reads return only their permitted projection. GraphQL owns no direct DynamoDB persistence.
+## Configuration
 
-For the full container demo, use Compose in the [sibling hub](../graph-rest-react-stack/README.md). Compose runs all three applications instead of the source dev commands; stop the source servers first to free ports 3000, 4000 and 3001. The UI’s built host preview is also local and needs both APIs running.
+[.env.example](.env.example) lists runtime settings; [infra/.env.example](infra/.env.example) lists deployment inputs. `REST_URL` defaults to localhost:3000. All `PROVIDER_*` selectors default to mock; only a selected real provider needs its credentials/model. Local bootstrap loads `.env`; deploy apps use explicit environment inputs.
 
-## Checks and implementation status
+---
 
-With the sibling hub platform toolchain installed:
+## Database
+
+REST owns persistence. GraphQL reaches memory/DynamoDB through its typed REST client and has no database permissions. Generation jobs, replay and caches are process-local: restart interrupts pending work.
+
+---
+
+## Authentication & Security
+
+`APP_MODE=live` requires Cognito pool/client settings shared with REST. Zod validation, depth/cost limits, explicit CORS and safe error mapping protect API boundaries. Public shares expose a read-only projection; live mode never falls back to demo identity.
+
+---
+
+## Testing
 
 ```sh
-node ../graph-rest-react-stack/scripts/verify-repo.mjs graph-api
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm test:integration
+pnpm codegen:check
+pnpm build
 ```
 
-This invokes installed format/lint/type tools, Vitest provider/config/stream contracts, real-server REST/GraphQL integration, committed schema/resolver generation checks, the TypeScript build, CDK assertions and fake-input offline synth. Integration tests start and stop their own local services with mock vendors.
+Integration checks require the sibling REST checkout and Bun. `infra:typecheck`, `infra:test` and `infra:synth` use the sibling hub's installed platform toolchain.
 
-OpenTelemetry spans, metrics and structured logs are implemented; export defaults off. Optional collector/New Relic routing is configured outside business logic. `infra/` defines ECS Fargate/ALB streaming, selected Secrets Manager injection, SSM references and scoped roles. Offline synth does not verify live deployment. Docker acceptance needs Docker; Cognito, AWS, real provider calls and external exports remain live-unverified. GitHub workflow templates are inactive. The API uses Fargate definitions; Lambda and Step Functions are outside this architecture.
+---
 
-The sibling hub supplies the architecture, provider/streaming references and full-stack evidence index.
+## CI/CD
 
-See the [learning index](../graph-rest-react-stack/docs/README.md), [verification record](../graph-rest-react-stack/docs/verification.md), and [deployment runbook](../graph-rest-react-stack/docs/patterns/deployment-runbook.md) for the shared toolchain and AWS environment flow. AWS hosting uses live Cognito auth even when planning providers are mock; `pnpm dev` means local source development.
+Disabled templates live under `.github/workflow-templates/`. `infra/` defines Fargate health checks, scoped roles, selected Secrets Manager injection and a CPU alarm. One graph task uses stop-before-start rollout because streaming state is local. Deployment goes through the hub's dry-run-default orchestration; live AWS operation is not yet verified.
+
+---
+
+## Observability
+
+`TELEMETRY_MODE=off` by default. Opt into OTLP with `OTEL_EXPORTER_OTLP_ENDPOINT`; the hub supplies collector/Jaeger and New Relic profiles. W3C trace context follows graph calls into REST.
+
+---
+
+## License
+
+See [LICENSE](LICENSE).
