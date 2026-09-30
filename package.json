@@ -17,7 +17,10 @@
     "typecheck": "tsc --noEmit",
     "test:integration": "vitest run tests/stack",
     "codegen": "graphql-codegen --config codegen.ts",
-    "codegen:check": "graphql-codegen --config codegen.ts --check"
+    "codegen:check": "graphql-codegen --config codegen.ts --check",
+    "infra:synth": "TSX_TSCONFIG_PATH=infra/tsconfig.json node --import ../graph-rest-react-stack/platform-cdk/node_modules/tsx/dist/loader.mjs infra/app.ts",
+    "infra:typecheck": "../graph-rest-react-stack/platform-cdk/node_modules/.bin/tsc --project infra/tsconfig.json",
+    "infra:test": "../graph-rest-react-stack/platform-cdk/node_modules/.bin/vitest run --config infra/vitest.config.ts"
   },
   "keywords": [],
   "author": "",

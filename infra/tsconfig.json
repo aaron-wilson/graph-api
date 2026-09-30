@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "aws-cdk-lib": ["../../graph-rest-react-stack/platform-cdk/node_modules/aws-cdk-lib"],
+      "aws-cdk-lib/*": ["../../graph-rest-react-stack/platform-cdk/node_modules/aws-cdk-lib/*"],
+      "constructs": ["../../graph-rest-react-stack/platform-cdk/node_modules/constructs"],
+      "vitest": ["../../graph-rest-react-stack/platform-cdk/node_modules/vitest"]
+    },
+    "types": ["node"]
+  },
+  "include": ["*.ts"]
+}
