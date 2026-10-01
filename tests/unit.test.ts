@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import { createCognitoAuth } from "../src/auth/cognito.js";
 import { demoAuth } from "../src/auth/demo.js";
 import { selectAuth } from "../src/auth/select.js";
-import { parseEnv } from "../src/config/env.js";
+import { parseEnv, summarizeConfig } from "../src/config/env.js";
+import { createLogger } from "../src/lib/utils.js";
 import { queryLimitRule } from "../src/graphql/limits.js";
 import { mockProviders } from "../src/providers/mock.js";
 import { createRestClient, type Trip } from "../src/rest/client.js";
@@ -37,6 +38,88 @@ it("validates and freezes configuration without exposing invalid values", () => 
   expect(() => parseEnv({ APP_MODE: "live" })).toThrow("Cognito settings");
   expect(parseEnv({}).allowIntrospection).toBe(false);
   expect(parseEnv({ ALLOW_INTROSPECTION: "true" }).allowIntrospection).toBe(true);
+});
+
+it("validates selected providers, models and endpoints without echoing values", () => {
+  const selected = {
+    PROVIDER_LLM: "openai",
+    OPENAI_API_KEY: "PRIVATE_KEY_SENTINEL",
+    OPENAI_MODEL: "example-model-1.5",
+  };
+  expect(parseEnv(selected).openaiModel).toBe("example-model-1.5");
+  const rejected: [Record<string, string>, string][] = [
+    [{ PROVIDER_LLM: "openai", OPENAI_API_KEY: "PRIVATE_KEY_SENTINEL" }, "OPENAI_MODEL"],
+    [{ PROVIDER_LLM: "anthropic", ANTHROPIC_MODEL: "example" }, "ANTHROPIC_API_KEY"],
+    [{ ...selected, OPENAI_MODEL: "bad model; PRIVATE_KEY_SENTINEL" }, "OPENAI_MODEL"],
+    [
+      { ...selected, OPENAI_BASE_URL: "http://vendor.example/PRIVATE_KEY_SENTINEL" },
+      "OPENAI_BASE_URL",
+    ],
+    [{ WTTR_URL: "https://user:PRIVATE_KEY_SENTINEL@wttr.example" }, "WTTR_URL"],
+    [{ OVERPASS_URL: "ftp://overpass.example/PRIVATE_KEY_SENTINEL" }, "OVERPASS_URL"],
+    [{ PROVIDER_WEATHER: "PRIVATE_KEY_SENTINEL" }, "PROVIDER_WEATHER"],
+    [
+      {
+        TELEMETRY_MODE: "otlp",
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://u:PRIVATE_KEY_SENTINEL@c:4318",
+      },
+      "OTEL_EXPORTER_OTLP_ENDPOINT",
+    ],
+  ];
+  for (const [input, key] of rejected) {
+    let message = "";
+    try {
+      parseEnv(input);
+    } catch (error) {
+      message = error instanceof Error ? error.message : "";
+    }
+    expect(message).toContain(key);
+    expect(message).not.toContain("PRIVATE_KEY_SENTINEL");
+  }
+  // Blank optional settings stay valid while their adapter is not selected.
+  expect(
+    parseEnv({
+      OPENAI_API_KEY: "",
+      OPENAI_MODEL: "",
+      TICKETMASTER_API_KEY: "",
+      OPENAI_BASE_URL: "",
+    }).providerLlm
+  ).toBe("mock");
+  expect(parseEnv({ WTTR_URL: "http://127.0.0.1:9000" }).wttrUrl).toBe("http://127.0.0.1:9000");
+});
+
+it("summarizes selections without keys, endpoints or identifiers", () => {
+  expect(summarizeConfig(parseEnv({}))).toEqual({
+    auth: "demo",
+    weather: "mock",
+    places: "mock",
+    events: "mock",
+    llm: "mock",
+    model: "none",
+    telemetry: "off",
+  });
+  const live = parseEnv({
+    APP_MODE: "live",
+    COGNITO_USER_POOL_ID: "us-east-1_PRIVATEPOOL",
+    COGNITO_CLIENT_ID: "PRIVATE_CLIENT",
+    PROVIDER_WEATHER: "wttr",
+    PROVIDER_LLM: "anthropic",
+    ANTHROPIC_API_KEY: "PRIVATE_KEY_SENTINEL",
+    ANTHROPIC_MODEL: "example-model",
+    TELEMETRY_MODE: "otlp",
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector.private:4318",
+  });
+  const summary = summarizeConfig(live);
+  expect(summary).toMatchObject({ auth: "live", weather: "wttr", llm: "anthropic" });
+  expect(summary.model).toBe("example-model");
+  expect(JSON.stringify(summary)).not.toMatch(/PRIVATE|collector/);
+  const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  createLogger("info")("info", "config_summary", { ...summary, apiKey: "PRIVATE_KEY_SENTINEL" });
+  const line = write.mock.calls.join(" ");
+  write.mockRestore();
+  expect(line).toContain('"llm":"anthropic"');
+  expect(line).toContain('"model":"example-model"');
+  expect(line).not.toContain("PRIVATE");
 });
 
 it("selects demo auth only in demo mode and never falls back from Cognito", async () => {

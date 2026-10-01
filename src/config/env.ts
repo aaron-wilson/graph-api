@@ -1,5 +1,35 @@
 import { z } from "zod";
 
+/** A vendor endpoint: HTTPS without embedded credentials, or plain HTTP to this machine. */
+const vendorUrl = z
+  .string()
+  .url()
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      if (url.username || url.password) return false;
+      return (
+        url.protocol === "https:" ||
+        (url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname))
+      );
+    } catch {
+      return false;
+    }
+  }, "must be HTTPS without credentials");
+/** A collector or service origin on a private network; never carries credentials. */
+const plainUrl = z
+  .string()
+  .url()
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password;
+    } catch {
+      return false;
+    }
+  }, "must be an HTTP(S) URL without credentials");
+const modelName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/);
+
 const schema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
@@ -18,22 +48,19 @@ const schema = z.object({
   PROVIDER_PLACES: z.enum(["mock", "overpass"]).default("mock"),
   PROVIDER_EVENTS: z.enum(["mock", "ticketmaster"]).default("mock"),
   PROVIDER_LLM: z.enum(["mock", "openai", "anthropic"]).default("mock"),
-  WTTR_URL: z.string().url().default("https://wttr.in"),
-  OVERPASS_URL: z.string().url().default("https://overpass-api.de/api/interpreter"),
-  TICKETMASTER_URL: z
-    .string()
-    .url()
-    .default("https://app.ticketmaster.com/discovery/v2/events.json"),
+  WTTR_URL: vendorUrl.default("https://wttr.in"),
+  OVERPASS_URL: vendorUrl.default("https://overpass-api.de/api/interpreter"),
+  TICKETMASTER_URL: vendorUrl.default("https://app.ticketmaster.com/discovery/v2/events.json"),
   TICKETMASTER_API_KEY: z.string().min(1).optional(),
   OPENAI_API_KEY: z.string().min(1).optional(),
-  OPENAI_MODEL: z.string().min(1).optional(),
-  OPENAI_BASE_URL: z.string().url().optional(),
+  OPENAI_MODEL: modelName.optional(),
+  OPENAI_BASE_URL: vendorUrl.optional(),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
-  ANTHROPIC_MODEL: z.string().min(1).optional(),
-  ANTHROPIC_BASE_URL: z.string().url().optional(),
+  ANTHROPIC_MODEL: modelName.optional(),
+  ANTHROPIC_BASE_URL: vendorUrl.optional(),
   PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(100).max(30000).default(5000),
   PROVIDER_STREAM_DEADLINE_MS: z.coerce.number().int().min(1000).max(300000).default(60000),
-  REST_URL: z.string().url().default("http://127.0.0.1:3000"),
+  REST_URL: plainUrl.default("http://127.0.0.1:3000"),
   REST_TIMEOUT_MS: z.coerce.number().int().min(100).max(30000).default(3000),
   APP_MODE: z.enum(["demo", "live"]).default("demo"),
   COGNITO_USER_POOL_ID: z.string().min(1).optional(),
@@ -42,7 +69,7 @@ const schema = z.object({
   MAX_QUERY_COMPLEXITY: z.coerce.number().int().min(1).max(10000).default(500),
   ALLOW_INTROSPECTION: z.enum(["true", "false"]).default("false"),
   TELEMETRY_MODE: z.enum(["off", "otlp"]).default("off"),
-  OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
+  OTEL_EXPORTER_OTLP_ENDPOINT: plainUrl.optional(),
 });
 export function parseEnv(input: Record<string, string | undefined>) {
   const result = schema.safeParse(
@@ -104,4 +131,26 @@ export function parseEnv(input: Record<string, string | undefined>) {
     telemetryMode: result.data.TELEMETRY_MODE,
     otlpEndpoint: result.data.OTEL_EXPORTER_OTLP_ENDPOINT,
   });
+}
+export type GraphConfig = ReturnType<typeof parseEnv>;
+
+/**
+ * The selections this process runs with, safe to log: adapter names, modes and the selected
+ * model only. It never includes a key, token, endpoint or identifier.
+ */
+export function summarizeConfig(config: GraphConfig) {
+  return {
+    auth: config.appMode,
+    weather: config.providerWeather,
+    places: config.providerPlaces,
+    events: config.providerEvents,
+    llm: config.providerLlm,
+    model:
+      (config.providerLlm === "openai"
+        ? config.openaiModel
+        : config.providerLlm === "anthropic"
+          ? config.anthropicModel
+          : undefined) ?? "none",
+    telemetry: config.telemetryMode,
+  };
 }
