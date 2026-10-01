@@ -109,7 +109,7 @@ it("costs a variable page size at its request value", () => {
   const schema = buildSchema(readFileSync("schema.graphql", "utf8"));
   // The saved-trips query the UI sends; it must fit the default budget at its page size.
   const saved =
-    "query ListTrips($first: Int!) { trips(first: $first) { items { id city version updatedAt } nextCursor } }";
+    "query ListTrips($first: Int!) { trips(first: $first) { items { id city version updatedAt days { id date } } nextCursor } }";
   const errors = (query: string, variables?: Record<string, unknown>, maxCost = 500) =>
     validate(schema, parse(query), [queryLimitRule(8, maxCost, variables)]).map(
       (error) => error.message

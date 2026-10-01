@@ -100,11 +100,29 @@ it("lists saved trips with the default limits and a variable page size", async (
     .set("Authorization", "Bearer demo")
     .send({
       query:
-        "query ListTrips($first: Int!) { trips(first: $first) { items { id city version updatedAt } nextCursor } }",
+        "query ListTrips($first: Int!) { trips(first: $first) { items { id city version updatedAt days { id date } } nextCursor } }",
       variables: { first: 20 },
     });
   expect(response.body).toEqual({ data: { trips: { items: [], nextCursor: null } } });
   expect(String(restFetch.mock.calls[0]?.[0])).toContain("/trips?limit=20");
+  // The browser client sends short queries as GET with JSON-encoded variables.
+  const viaGet = await request(api)
+    .get("/graphql")
+    .set("Authorization", "Bearer demo")
+    .query({
+      query: "query ListTrips($first: Int!) { trips(first: $first) { items { id } nextCursor } }",
+      operationName: "ListTrips",
+      variables: JSON.stringify({ first: 20 }),
+    });
+  expect(viaGet.body).toEqual({ data: { trips: { items: [], nextCursor: null } } });
+  const oversized = await request(api)
+    .get("/graphql")
+    .set("Authorization", "Bearer demo")
+    .query({
+      query: "query($first: Int!) { trips(first: $first) { items { id city version updatedAt } } }",
+      variables: JSON.stringify({ first: 100 }),
+    });
+  expect(oversized.body.errors[0].message).toBe("Query cost exceeds 500");
 });
 
 it("separates anonymous, invalid and valid callers", async () => {
