@@ -210,3 +210,18 @@ it("normalizes REST failures without leaking upstream bodies", async () => {
   const anonymous = createRestClient("http://rest", null, 50, async () => Response.json({}));
   await expect(anonymous.batch([])).rejects.toMatchObject({ status: 401 });
 });
+
+it("streams offline itinerary text that reads as an activity", async () => {
+  const text = async (prompt: string) => {
+    let joined = "";
+    for await (const chunk of mockProviders.llm.stream(prompt)) joined += chunk;
+    return joined;
+  };
+  expect(await text("Plan activities in Lisbon for food, art")).toBe(
+    "Start with an unhurried walk through Lisbon, pausing wherever something catches your eye."
+  );
+  expect(await text("Plan activities in Oslo for")).toContain("through Oslo,");
+  expect(await text(`Plan activities in ${"x".repeat(100)} for art`)).toContain(
+    ` ${"x".repeat(60)},`
+  );
+});

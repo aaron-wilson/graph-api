@@ -24,9 +24,11 @@ export const mockProviders: PlanningProviders = {
   llm: {
     async *stream(prompt, signal) {
       const value = promptSchema.parse(prompt);
+      // The planner uses the streamed text as an activity title, so it must read as one.
+      const city = /^Plan activities in (.+?) for\b/.exec(value)?.[1] ?? "the city";
       for (const chunk of [
-        `Plan for ${value.slice(0, 80)}.`,
-        " Explore the city at your own pace.",
+        `Start with an unhurried walk through ${city.slice(0, 60)},`,
+        " pausing wherever something catches your eye.",
       ]) {
         if (signal?.aborted) throw new ProviderError("cancelled");
         yield chunk;
