@@ -39,7 +39,7 @@ const schema = z.object({
   COGNITO_USER_POOL_ID: z.string().min(1).optional(),
   COGNITO_CLIENT_ID: z.string().min(1).optional(),
   MAX_QUERY_DEPTH: z.coerce.number().int().min(1).max(20).default(8),
-  MAX_QUERY_COMPLEXITY: z.coerce.number().int().min(1).max(1000).default(100),
+  MAX_QUERY_COMPLEXITY: z.coerce.number().int().min(1).max(10000).default(500),
   ALLOW_INTROSPECTION: z.enum(["true", "false"]).default("false"),
   TELEMETRY_MODE: z.enum(["off", "otlp"]).default("off"),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),

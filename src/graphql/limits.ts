@@ -7,25 +7,56 @@ import {
   type FieldNode,
   type GraphQLField,
   type GraphQLNamedType,
+  type OperationDefinitionNode,
   type SelectionSetNode,
   type ValidationContext,
   type ValidationRule,
+  validate,
 } from "graphql";
 import type { Plugin } from "graphql-yoga";
 
-// A variable page size is costed at the largest page REST will return.
+// The largest page REST will return; an unknown or invalid page size is costed at this.
 const MAX_PAGE = 100;
+
+/** Resolves a variable to its request value, or undefined when it cannot be known. */
+type VariableReader = (name: string) => unknown;
+
+const validPage = (value: unknown) =>
+  typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= MAX_PAGE
+    ? value
+    : MAX_PAGE;
+
+/**
+ * Reads variables for one operation: the request value, else the declared literal default.
+ * Without request variables every variable is unknown, so validation alone stays conservative.
+ */
+function variableReader(
+  operation: OperationDefinitionNode,
+  variables: Readonly<Record<string, unknown>> | undefined
+): VariableReader {
+  return (name) => {
+    if (!variables) return undefined;
+    if (Object.hasOwn(variables, name) && variables[name] !== undefined) return variables[name];
+    const fallback = operation.variableDefinitions?.find(
+      (definition) => definition.variable.name.value === name
+    )?.defaultValue;
+    return fallback?.kind === Kind.INT ? Number(fallback.value) : undefined;
+  };
+}
 
 function tooComplex(message: string) {
   return new GraphQLError(message, { extensions: { code: "QUERY_TOO_COMPLEX" } });
 }
 
-function pageSize(node: FieldNode, field: GraphQLField<unknown, unknown> | undefined) {
+function pageSize(
+  node: FieldNode,
+  field: GraphQLField<unknown, unknown> | undefined,
+  readVariable: VariableReader
+) {
   const argument = node.arguments?.find((arg) => arg.name.value === "first");
-  if (argument?.value.kind === Kind.INT) {
-    const value = Number(argument.value.value);
-    return Number.isInteger(value) && value >= 1 && value <= MAX_PAGE ? value : MAX_PAGE;
-  }
+  if (argument?.value.kind === Kind.INT) return validPage(Number(argument.value.value));
+  if (argument?.value.kind === Kind.VARIABLE)
+    return validPage(readVariable(argument.value.name.value));
   if (argument) return MAX_PAGE;
   const fallback = field?.args.find((arg) => arg.name === "first")?.defaultValue;
   return typeof fallback === "number" && Number.isFinite(fallback) && fallback >= 1
@@ -44,7 +75,8 @@ function measure(
   fragments: ReadonlySet<string>,
   maxDepth: number,
   maxCost: number,
-  work: { remaining: number }
+  work: { remaining: number },
+  readVariable: VariableReader
 ): { depth: number; cost: number } {
   let depth = 0;
   let cost = 0;
@@ -65,10 +97,11 @@ function measure(
             fragments,
             maxDepth,
             maxCost,
-            work
+            work,
+            readVariable
           )
         : { depth: 0, cost: 0 };
-      add(child, 1, pageSize(selection, field));
+      add(child, 1, pageSize(selection, field, readVariable));
       if (cost > maxCost || depth > maxDepth) break;
       continue;
     }
@@ -96,7 +129,8 @@ function measure(
         seen,
         maxDepth,
         maxCost,
-        work
+        work,
+        readVariable
       ),
       0,
       1
@@ -106,7 +140,15 @@ function measure(
   return { depth, cost };
 }
 
-export function queryLimitRule(maxDepth: number, maxCost: number): ValidationRule {
+/**
+ * Bounds depth and cost for each operation. Pass the request variables to cost variable page
+ * sizes at their actual value; without them a variable page size counts as the largest page.
+ */
+export function queryLimitRule(
+  maxDepth: number,
+  maxCost: number,
+  variables?: Readonly<Record<string, unknown>>
+): ValidationRule {
   return (context) => ({
     OperationDefinition(operation) {
       const root = context.getSchema().getRootType(operation.operation) ?? undefined;
@@ -117,7 +159,8 @@ export function queryLimitRule(maxDepth: number, maxCost: number): ValidationRul
         new Set(),
         maxDepth,
         maxCost,
-        { remaining: 1000 }
+        { remaining: 1000 },
+        variableReader(operation, variables)
       );
       if (depth > maxDepth) context.reportError(tooComplex(`Query depth exceeds ${maxDepth}`));
       if (cost > maxCost) context.reportError(tooComplex(`Query cost exceeds ${maxCost}`));
@@ -125,17 +168,25 @@ export function queryLimitRule(maxDepth: number, maxCost: number): ValidationRul
   });
 }
 
-/** Adds depth/cost bounds to every operation and blocks introspection unless allowed. */
+/**
+ * Adds depth/cost bounds to every operation and blocks introspection unless allowed. The bounds
+ * run before execution rather than during validation: Yoga caches validation per document, and
+ * the cost of a paged field depends on the variables of each request.
+ */
 export function queryLimits(options: {
   maxDepth: number;
   maxCost: number;
   allowIntrospection: boolean;
 }): Plugin {
-  const limit = queryLimitRule(options.maxDepth, options.maxCost);
   return {
     onValidate({ addValidationRule }) {
-      addValidationRule(limit);
       if (!options.allowIntrospection) addValidationRule(NoSchemaIntrospectionCustomRule);
+    },
+    onExecute({ args, setResultAndStopExecution }) {
+      const errors = validate(args.schema, args.document, [
+        queryLimitRule(options.maxDepth, options.maxCost, args.variableValues ?? {}),
+      ]);
+      if (errors.length > 0) setResultAndStopExecution({ errors });
     },
   };
 }

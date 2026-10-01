@@ -46,7 +46,7 @@ it("serves health, rejects the retired query and guards introspection", async ()
 
 it("enforces depth and cost limits before execution", async () => {
   const restFetch = vi.fn(offlineRest);
-  const api = await start({ MAX_QUERY_DEPTH: "3" }, { restFetch });
+  const api = await start({ MAX_QUERY_DEPTH: "3", MAX_QUERY_COMPLEXITY: "100" }, { restFetch });
   const deep = await request(api)
     .post("/graphql")
     .set("Authorization", "Bearer demo")
@@ -79,7 +79,32 @@ it("enforces depth and cost limits before execution", async () => {
     .set("Authorization", "Bearer demo")
     .send({ query: dag });
   expect(repeated.body.errors[0].message).toBe("Query cost exceeds 100");
-  expect(restFetch).not.toHaveBeenCalled();
+  const paged = "query($first: Int!) { trips(first: $first) { items { id city } } }";
+  // The same document is costed per request, so a cached validation cannot admit a larger page.
+  for (const first of [100, 20, 100]) {
+    const response = await request(api)
+      .post("/graphql")
+      .set("Authorization", "Bearer demo")
+      .send({ query: paged, variables: { first } });
+    if (first === 100) expect(response.body.errors[0].message).toBe("Query cost exceeds 100");
+    else expect(response.body.errors[0].extensions.code).not.toBe("QUERY_TOO_COMPLEX");
+  }
+  expect(restFetch).toHaveBeenCalledTimes(1);
+});
+
+it("lists saved trips with the default limits and a variable page size", async () => {
+  const restFetch = vi.fn<typeof fetch>(async () => Response.json({ items: [], nextCursor: null }));
+  const api = await start({}, { restFetch });
+  const response = await request(api)
+    .post("/graphql")
+    .set("Authorization", "Bearer demo")
+    .send({
+      query:
+        "query ListTrips($first: Int!) { trips(first: $first) { items { id city version updatedAt } nextCursor } }",
+      variables: { first: 20 },
+    });
+  expect(response.body).toEqual({ data: { trips: { items: [], nextCursor: null } } });
+  expect(String(restFetch.mock.calls[0]?.[0])).toContain("/trips?limit=20");
 });
 
 it("separates anonymous, invalid and valid callers", async () => {

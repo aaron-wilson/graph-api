@@ -105,6 +105,32 @@ it("bounds query depth and fragment-expanded cost", () => {
   ).toEqual(["Query cost exceeds 100"]);
 });
 
+it("costs a variable page size at its request value", () => {
+  const schema = buildSchema(readFileSync("schema.graphql", "utf8"));
+  // The saved-trips query the UI sends; it must fit the default budget at its page size.
+  const saved =
+    "query ListTrips($first: Int!) { trips(first: $first) { items { id city version updatedAt } nextCursor } }";
+  const errors = (query: string, variables?: Record<string, unknown>, maxCost = 500) =>
+    validate(schema, parse(query), [queryLimitRule(8, maxCost, variables)]).map(
+      (error) => error.message
+    );
+  expect(errors(saved, { first: 20 })).toEqual([]);
+  expect(errors(saved, { first: 100 })).toEqual(["Query cost exceeds 500"]);
+  expect(errors(saved)).toEqual(["Query cost exceeds 500"]);
+  for (const first of [0, -5, 101, 2.5, "20", null])
+    expect(errors(saved, { first })).toEqual(["Query cost exceeds 500"]);
+  const defaulted = "query($n: Int = 10) { trips(first: $n) { items { id city } } }";
+  expect(errors(defaulted, {}, 100)).toEqual([]);
+  expect(errors(defaulted, { n: 50 }, 100)).toEqual(["Query cost exceeds 100"]);
+  expect(
+    errors(
+      "query($n: Int!) { ...Page } fragment Page on Query { trips(first: $n) { items { id city } } }",
+      { n: 50 },
+      100
+    )
+  ).toEqual(["Query cost exceeds 100"]);
+});
+
 it("bounds repeated fragments and never subtracts invalid page sizes", () => {
   const schema = buildSchema(readFileSync("schema.graphql", "utf8"));
   const queryType = schema.getQueryType();
