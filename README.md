@@ -21,7 +21,7 @@
 
 ## Overview
 
-The GraphQL layer shapes REST data for the UI and orchestrates planning providers. It demonstrates generated types, request-local batching, validated integrations, and authenticated streaming.
+The GraphQL layer shapes REST data for the UI and orchestrates planning providers. It uses generated types, request-local batching, validated integrations, and authenticated streaming.
 
 - GraphQL queries/mutations plus generation subscriptions and SSE replay
 - Mock or real weather, places, events, and LLM adapters
