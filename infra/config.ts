@@ -1,4 +1,9 @@
 import { z } from "zod";
+const blankAsUnset = (value: unknown) =>
+  typeof value === "string" && value.trim() === "" ? undefined : value;
+/** A provider selection; a blank or missing value keeps the offline mock. */
+const selector = <const T extends [string, ...string[]]>(values: T) =>
+  z.preprocess(blankAsUnset, z.enum(values).default(values[0]));
 const schema = z.object({
   PLATFORM_ACCOUNT: z.string().regex(/^\d{12}$/),
   PLATFORM_REGION: z.string().regex(/^[a-z]{2}-[a-z]+-\d$/),
@@ -6,12 +11,17 @@ const schema = z.object({
   PLATFORM_AVAILABILITY_ZONES: z.string(),
   PLATFORM_SITE_ORIGIN: z.string().url(),
   API_IMAGE_TAG: z.string().regex(/^[a-f0-9]{40}$/),
-  API_LLM_PROVIDER: z.enum(["mock", "openai", "anthropic"]).default("mock"),
+  API_WEATHER_PROVIDER: selector(["mock", "wttr"]),
+  API_PLACES_PROVIDER: selector(["mock", "overpass"]),
+  API_EVENTS_PROVIDER: selector(["mock", "ticketmaster"]),
+  API_LLM_PROVIDER: selector(["mock", "openai", "anthropic"]),
   API_LLM_MODEL: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().min(1).optional()
+    blankAsUnset,
+    z
+      .string()
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/)
+      .optional()
   ),
-  API_EVENTS_PROVIDER: z.enum(["mock", "ticketmaster"]).default("mock"),
 });
 export function parseConfig(input: Record<string, string | undefined>) {
   const result = schema.safeParse(input);

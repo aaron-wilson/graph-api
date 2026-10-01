@@ -34,6 +34,87 @@ describe("graph Fargate contract", () => {
       ).toBe("example-model");
     }
   });
+  it("defaults every provider to mock and maps each real selection to the task", () => {
+    const environment = (extra: Record<string, string> = {}) => {
+      const task = Object.values(template(extra).findResources("AWS::ECS::TaskDefinition"))[0];
+      const container = task.Properties.ContainerDefinitions[0];
+      return {
+        values: Object.fromEntries(
+          (container.Environment as { Name: string; Value: unknown }[]).map((item) => [
+            item.Name,
+            item.Value,
+          ])
+        ),
+        secrets: ((container.Secrets ?? []) as { Name: string }[]).map((item) => item.Name),
+      };
+    };
+    const blanks: Record<string, string>[] = [
+      {},
+      { API_WEATHER_PROVIDER: "", API_PLACES_PROVIDER: " " },
+    ];
+    for (const blank of blanks) {
+      const defaults = environment(blank);
+      expect(defaults.values).toMatchObject({
+        PROVIDER_WEATHER: "mock",
+        PROVIDER_PLACES: "mock",
+        PROVIDER_EVENTS: "mock",
+        PROVIDER_LLM: "mock",
+      });
+      expect(defaults.secrets).toEqual([]);
+      expect(Object.keys(defaults.values).join(" ")).not.toMatch(/_MODEL|_API_KEY/);
+    }
+    const open = environment({ API_WEATHER_PROVIDER: "wttr", API_PLACES_PROVIDER: "overpass" });
+    expect(open.values).toMatchObject({ PROVIDER_WEATHER: "wttr", PROVIDER_PLACES: "overpass" });
+    expect(open.secrets).toEqual([]);
+    const cases: [Record<string, string>, Record<string, string>, string[]][] = [
+      [
+        { API_LLM_PROVIDER: "openai", API_LLM_MODEL: "example-model" },
+        { PROVIDER_LLM: "openai", OPENAI_MODEL: "example-model" },
+        ["OPENAI_API_KEY"],
+      ],
+      [
+        { API_LLM_PROVIDER: "anthropic", API_LLM_MODEL: "example-model" },
+        { PROVIDER_LLM: "anthropic", ANTHROPIC_MODEL: "example-model" },
+        ["ANTHROPIC_API_KEY"],
+      ],
+      [
+        { API_EVENTS_PROVIDER: "ticketmaster" },
+        { PROVIDER_EVENTS: "ticketmaster" },
+        ["TICKETMASTER_API_KEY"],
+      ],
+    ];
+    for (const [input, values, secrets] of cases) {
+      const selected = environment(input);
+      expect(selected.values).toMatchObject(values);
+      expect(selected.secrets).toEqual(secrets);
+    }
+    const anthropic = environment({
+      API_LLM_PROVIDER: "anthropic",
+      API_LLM_MODEL: "example-model",
+    });
+    expect(anthropic.values).not.toHaveProperty("OPENAI_MODEL");
+  });
+  it("rejects unknown selections and malformed models without echoing values", () => {
+    const rejected: [Record<string, string>, string][] = [
+      [{ API_WEATHER_PROVIDER: "PRIVATE_SENTINEL" }, "API_WEATHER_PROVIDER"],
+      [{ API_PLACES_PROVIDER: "wttr" }, "API_PLACES_PROVIDER"],
+      [{ API_EVENTS_PROVIDER: "PRIVATE_SENTINEL" }, "API_EVENTS_PROVIDER"],
+      [
+        { API_LLM_PROVIDER: "openai", API_LLM_MODEL: "bad model PRIVATE_SENTINEL" },
+        "API_LLM_MODEL",
+      ],
+    ];
+    for (const [input, key] of rejected) {
+      let message = "";
+      try {
+        parseConfig({ ...fixture, ...input });
+      } catch (error) {
+        message = error instanceof Error ? error.message : "";
+      }
+      expect(message).toContain(key);
+      expect(message).not.toContain("PRIVATE_SENTINEL");
+    }
+  });
   it("requires bounded live inputs and immutable image revisions", () => {
     expect(() => parseConfig({ ...fixture, API_IMAGE_TAG: "latest" })).toThrow("API_IMAGE_TAG");
     expect(() =>

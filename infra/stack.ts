@@ -45,8 +45,11 @@ export class ApiStack extends cdk.Stack {
     };
     const injected: Record<string, cdk.aws_ecs.Secret> = {};
     environment.REST_URL = `http://${ref("compute/rest-alb-dns")}:3000`;
-    environment.PROVIDER_LLM = c.API_LLM_PROVIDER;
+    // Weather and places need no credential; they reach their public endpoints through NAT.
+    environment.PROVIDER_WEATHER = c.API_WEATHER_PROVIDER;
+    environment.PROVIDER_PLACES = c.API_PLACES_PROVIDER;
     environment.PROVIDER_EVENTS = c.API_EVENTS_PROVIDER;
+    environment.PROVIDER_LLM = c.API_LLM_PROVIDER;
     if (c.API_LLM_PROVIDER !== "mock") {
       const vendor = c.API_LLM_PROVIDER;
       environment[`${vendor.toUpperCase()}_MODEL`] = c.API_LLM_MODEL ?? "";

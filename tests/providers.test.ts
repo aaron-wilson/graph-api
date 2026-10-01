@@ -9,6 +9,7 @@ import { createOverpassPlaces } from "../src/providers/overpass.js";
 import { createTicketmasterEvents } from "../src/providers/ticketmaster.js";
 import { createOpenAiLlm } from "../src/providers/openai.js";
 import { createAnthropicLlm } from "../src/providers/anthropic.js";
+import { gatherIdeas } from "../src/trips/planner.js";
 import { z } from "zod";
 
 const json = (value: unknown, status = 200) =>
@@ -323,5 +324,76 @@ it("bounds LLM streams by first-token, idle and total deadlines", async () => {
     expect((await iterator.next()).value).toBe("w1 ");
     controller.abort();
     await expect(iterator.next()).rejects.toMatchObject({ code: "cancelled" });
+  }
+});
+
+it("fails a selected provider clearly instead of answering from a mock", async () => {
+  const key = "PRIVATE_VENDOR_KEY";
+  const selected = (fetcher: typeof fetch) =>
+    createProviders(
+      parseEnv({
+        PROVIDER_WEATHER: "wttr",
+        PROVIDER_PLACES: "overpass",
+        PROVIDER_EVENTS: "ticketmaster",
+        TICKETMASTER_API_KEY: key,
+        PROVIDER_TIMEOUT_MS: "100",
+      }),
+      fetcher
+    );
+  const outcome = async (work: Promise<unknown>) => {
+    try {
+      await work;
+      return { code: "resolved", text: "" };
+    } catch (error) {
+      return {
+        code: error instanceof ProviderError ? error.code : "other",
+        text: `${String(error)} ${JSON.stringify(error)}`,
+      };
+    }
+  };
+  const failures: [string, typeof fetch, string][] = [
+    ["authentication", vi.fn(async () => json({ fault: key }, 401)) as typeof fetch, "unavailable"],
+    ["forbidden", vi.fn(async () => json({ fault: key }, 403)) as typeof fetch, "unavailable"],
+    [
+      "invalid payload",
+      vi.fn(async () => json({ unexpected: key })) as typeof fetch,
+      "invalid_response",
+    ],
+    [
+      "not json",
+      vi.fn(async () => new Response(`<html>${key}</html>`, { status: 200 })) as typeof fetch,
+      "invalid_response",
+    ],
+    [
+      "timeout",
+      vi.fn(
+        async (_url: string, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) =>
+            init?.signal?.addEventListener("abort", () => reject(init.signal?.reason))
+          )
+      ) as typeof fetch,
+      "timeout",
+    ],
+  ];
+  for (const [name, fetcher, code] of failures) {
+    const providers = selected(fetcher);
+    for (const [capability, work] of [
+      ["weather", providers.weather.current("Rome")],
+      ["events", providers.events.find("Rome")],
+    ] as const) {
+      const result = await outcome(work);
+      // An events envelope with no events is valid, so a stray payload yields an empty list.
+      if (name === "invalid payload" && capability === "events") {
+        expect(result.code, `${name} ${capability}`).toBe("resolved");
+        continue;
+      }
+      expect(result.code, `${name} ${capability}`).toBe(code);
+      expect(result.text, `${name} ${capability}`).not.toContain(key);
+    }
+    expect(fetcher).toHaveBeenCalled();
+    // The planner surfaces the same failure; no mock idea is substituted.
+    const ideas = await outcome(gatherIdeas(selected(fetcher), "Rome", ["food"]));
+    if (name !== "invalid payload") expect(ideas.code, name).toBe(code);
+    expect(ideas.text).not.toContain(key);
   }
 });
