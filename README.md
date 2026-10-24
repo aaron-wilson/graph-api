@@ -54,7 +54,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-GraphQL: http://localhost:4000/graphql. Health: `/health`. Private requests use `Authorization: Bearer demo` in default demo mode. GraphiQL/introspection are disabled unless `ALLOW_INTROSPECTION=true`. For a full container alternative, use [hub Compose](https://github.com/aaron-wilson/graph-rest-react-stack); do not run both stacks on the same ports.
+GraphQL: http://localhost:4000/graphql. Health: `/health`. Private requests use `Authorization: Bearer demo` in default demo mode. GraphiQL/introspection are disabled unless `ALLOW_INTROSPECTION=true`.
 
 ---
 
@@ -87,19 +87,19 @@ pnpm codegen:check
 pnpm build
 ```
 
-Integration checks require the sibling REST checkout and Bun. `infra:typecheck`, `infra:test` and `infra:synth` use the sibling hub's installed platform toolchain.
+Integration checks require the sibling REST checkout and Bun. `infra:typecheck`, `infra:test` and `infra:synth` use the shared platform CDK toolchain.
 
 ---
 
 ## CI/CD
 
-Disabled templates live under `.github/workflow-templates/`. `infra/` defines Fargate health checks, scoped roles, selected Secrets Manager injection and a CPU alarm. One graph task uses stop-before-start rollout because streaming state is local. Deployment goes through the hub's dry-run-default orchestration; live AWS operation is not yet verified.
+Disabled templates live under `.github/workflow-templates/`. `infra/` defines Fargate health checks, scoped roles, selected Secrets Manager injection and a CPU alarm. One graph task uses stop-before-start rollout because streaming state is local. Deployment goes through the platform's dry-run-default orchestration; live AWS operation is not yet verified.
 
 ---
 
 ## Observability
 
-`TELEMETRY_MODE=off` by default. Opt into OTLP with `OTEL_EXPORTER_OTLP_ENDPOINT`; the hub supplies collector/Jaeger and New Relic profiles. W3C trace context follows graph calls into REST.
+`TELEMETRY_MODE=off` by default. Opt into OTLP with `OTEL_EXPORTER_OTLP_ENDPOINT`; the platform supplies collector/Jaeger and New Relic profiles. W3C trace context follows graph calls into REST.
 
 ---
 
