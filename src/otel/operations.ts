@@ -1,4 +1,5 @@
 import { context, metrics, propagation, trace, SpanStatusCode } from "@opentelemetry/api";
+import { ProviderError } from "../providers/port.js";
 
 const tracer = trace.getTracer("wander-graph");
 const meter = metrics.getMeter("wander-graph");
@@ -15,6 +16,10 @@ export async function observed<T>(name: string, operation: () => Promise<T>): Pr
       return await operation();
     } catch (error) {
       span.setStatus({ code: SpanStatusCode.ERROR });
+      if (error instanceof ProviderError) {
+        span.setAttribute("wander.provider.error", error.code);
+        if (name.startsWith("provider.")) error.provider ??= name.slice("provider.".length);
+      }
       errors.add(1, { operation: name });
       throw error;
     } finally {

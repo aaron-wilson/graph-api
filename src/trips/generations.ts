@@ -43,8 +43,11 @@ function ownerFromId(id: string) {
   }
 }
 
-/** Process-local generation ledger with bounded replay and explicit restart semantics. */
-export function createGenerationManager() {
+/**
+ * Process-local generation ledger with bounded replay and explicit restart semantics.
+ * `onFailure` receives the error of every job that fails without being cancelled.
+ */
+export function createGenerationManager(onFailure: (error: unknown) => void = () => undefined) {
   const jobs = new Map<string, Job>();
   const active = new Map<string, string>();
   const view = (job: Job) => ({ id: job.id, status: job.status, tripId: job.tripId });
@@ -155,7 +158,8 @@ export function createGenerationManager() {
             job.controller.signal.aborted ? "cancelled" : "completed",
             job.controller.signal.aborted ? null : trip.id
           );
-        } catch {
+        } catch (error) {
+          if (!job.controller.signal.aborted) onFailure(error);
           finish(job, job.controller.signal.aborted ? "cancelled" : "failed");
         }
       });

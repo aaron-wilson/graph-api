@@ -41,4 +41,6 @@ export class ProviderError extends Error {
   ) {
     super("Planning provider unavailable");
   }
+  /** Which provider failed, such as "places"; set by the innermost observed operation. */
+  provider?: string;
 }

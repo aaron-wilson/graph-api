@@ -1,4 +1,6 @@
 import { expect, it, vi } from "vitest";
+import { observed } from "../src/otel/operations.js";
+import { ProviderError } from "../src/providers/port.js";
 import { GenerationLimit } from "../src/trips/errors.js";
 import { createGenerationManager, type GenerationEvent } from "../src/trips/generations.js";
 const saved = { id: "00000000-0000-4000-8000-000000000001" };
@@ -142,4 +144,26 @@ it("sends accumulated text to subscribers that replay cannot serve", async () =>
     );
     expect(new Set(events.map((event) => event.seq)).size).toBe(events.length);
   }
+});
+
+it("reports failed jobs with the failing provider and skips cancelled ones", async () => {
+  const failures: unknown[] = [];
+  const manager = createGenerationManager((error) => failures.push(error));
+  const failed = manager.start("demo", "demo:create", () =>
+    observed("planner.gather", () =>
+      observed("provider.places", () => Promise.reject(new ProviderError("timeout")))
+    )
+  );
+  const events: GenerationEvent[] = [];
+  manager.subscribe(failed.id, "demo", 0, (event) => events.push(event));
+  await vi.waitFor(() => expect(events.at(-1)?.status).toBe("failed"));
+  expect(failures).toHaveLength(1);
+  expect(failures[0]).toMatchObject({ code: "timeout", provider: "places" });
+  const cancelled = manager.start("demo", "demo:refine", async (signal) => {
+    await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve()));
+    throw new ProviderError("cancelled");
+  });
+  manager.cancel(cancelled.id, "demo");
+  await Promise.resolve();
+  expect(failures).toHaveLength(1);
 });

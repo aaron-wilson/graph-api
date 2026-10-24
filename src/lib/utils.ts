@@ -7,6 +7,7 @@ const rank: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 const WORD_FIELDS = new Set([
   "name",
   "classification",
+  "provider",
   "auth",
   "weather",
   "places",

@@ -9,7 +9,7 @@ import { maskGraphError, toPublicError } from "./graphql/errors.js";
 import { queryLimits } from "./graphql/limits.js";
 import { tripSchema } from "./graphql/schema.js";
 import { createProviders } from "./providers/index.js";
-import type { PlanningProviders } from "./providers/port.js";
+import { ProviderError, type PlanningProviders } from "./providers/port.js";
 import { createLogger } from "./lib/utils.js";
 import { createGenerationManager, type GenerationManager } from "./trips/generations.js";
 import { context, trace, SpanStatusCode } from "@opentelemetry/api";
@@ -27,7 +27,17 @@ export function createApp(config: ReturnType<typeof parseEnv>, deps: Partial<App
   if (config.appMode === "live" && auth === demoAuth)
     throw new Error("Demo auth is unavailable in live mode");
   const log = createLogger(config.logLevel);
-  const generations = deps.generations ?? createGenerationManager();
+  const generations =
+    deps.generations ??
+    createGenerationManager((error) =>
+      log(
+        "warn",
+        "generation_failed",
+        error instanceof ProviderError
+          ? { classification: error.code, provider: error.provider ?? "unknown" }
+          : { classification: "internal" }
+      )
+    );
   const yoga = createYoga({
     schema: tripSchema,
     context: createContextFactory({
