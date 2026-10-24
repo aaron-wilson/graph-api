@@ -79,7 +79,11 @@ export function createApp(config: ReturnType<typeof parseEnv>, deps: Partial<App
         response.once("finish", end);
         response.once("close", end);
         if (request.url === "/health") {
-          response.writeHead(200, { "content-type": "application/json" });
+          // The UI footer probes this cross-origin; without the header the browser hides the 200.
+          response.writeHead(200, {
+            "content-type": "application/json",
+            "access-control-allow-origin": config.corsOrigin,
+          });
           response.end(JSON.stringify({ status: "healthy" }));
           return;
         }

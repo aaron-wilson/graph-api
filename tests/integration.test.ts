@@ -27,7 +27,9 @@ const create = `mutation {
 
 it("serves health, rejects the retired query and guards introspection", async () => {
   const api = await start();
-  expect((await request(api).get("/health")).body.status).toBe("healthy");
+  const health = await request(api).get("/health");
+  expect(health.body.status).toBe("healthy");
+  expect(health.headers["access-control-allow-origin"]).toBe("http://localhost:3001");
   const retired = await request(api)
     .post("/graphql")
     .send({ query: '{ planTrip(city:"Rome", preferences:[]) { itinerary } }' });
